@@ -1,0 +1,34 @@
+{
+  "name": "yedeng",
+  "private": true,
+  "version": "0.2.0",
+  "description": "页灯 YEDENG — 使用自己的 AI 服务精读论文的 Chrome 扩展",
+  "type": "module",
+  "scripts": {
+    "probe": "node scripts/probe-pdfjs.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "assets": "node scripts/copy-pdfjs.mjs",
+    "prepare-dist": "node scripts/make-icons.mjs && node scripts/copy-pdfjs.mjs",
+    "dev": "pnpm prepare-dist && vite build --watch",
+    "build": "pnpm prepare-dist && vite build && node scripts/check-dist.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke-test.mjs"
+  },
+  "dependencies": {
+    "katex": "0.19.0",
+    "pdfjs-dist": "5.7.284"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.9",
+    "@types/node": "^22.20.2",
+    "typescript": "5.9.3",
+    "vite": "8.2.2",
+    "vitest": "5.0.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "pnpm@10.20.0"
+}

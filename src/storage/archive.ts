@@ -1,0 +1,12 @@
+/** Small, dependency-free ZIP STORE writer. Paths are generated locally, never from PDF/model text. */
+export interface ArchiveEntry {path:string;bytes:Uint8Array}
+function crc32(bytes:Uint8Array):number{let crc=0xffffffff;for(const byte of bytes){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return(crc^0xffffffff)>>>0;}
+export function zipStore(entries:readonly ArchiveEntry[]):Uint8Array{
+ const names=new Set<string>(),parts:Uint8Array[]=[],directory:Uint8Array[]=[];let offset=0,total=0;
+ for(const entry of entries){if(!/^[a-zA-Z0-9_./-]+$/.test(entry.path)||entry.path.startsWith('/')||entry.path.split('/').some(s=>s==='..'||!s)||names.has(entry.path))throw new Error('导出路径无效');names.add(entry.path);total+=entry.bytes.length;if(total>180*1024*1024||entries.length>60000)throw new Error('图片导出超过本轮大小上限，请减少材料');
+  const name=new TextEncoder().encode(entry.path),crc=crc32(entry.bytes),header=new Uint8Array(30+name.length),h=new DataView(header.buffer);h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x800,true);h.setUint32(14,crc,true);h.setUint32(18,entry.bytes.length,true);h.setUint32(22,entry.bytes.length,true);h.setUint16(26,name.length,true);header.set(name,30);parts.push(header,entry.bytes);
+  const central=new Uint8Array(46+name.length),c=new DataView(central.buffer);c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x800,true);c.setUint32(16,crc,true);c.setUint32(20,entry.bytes.length,true);c.setUint32(24,entry.bytes.length,true);c.setUint16(28,name.length,true);c.setUint32(42,offset,true);central.set(name,46);directory.push(central);offset+=header.length+entry.bytes.length;
+ }
+ const centralSize=directory.reduce((n,b)=>n+b.length,0),end=new Uint8Array(22),e=new DataView(end.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(8,entries.length,true);e.setUint16(10,entries.length,true);e.setUint32(12,centralSize,true);e.setUint32(16,offset,true);parts.push(...directory,end);const result=new Uint8Array(offset+centralSize+end.length);let at=0;for(const part of parts){result.set(part,at);at+=part.length;}return result;
+}
+export function downloadLocal(bytes:Uint8Array|string,name:string,type:string):void{const data=typeof bytes==='string'?bytes:bytes.slice().buffer,url=URL.createObjectURL(new Blob([data],{type})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}

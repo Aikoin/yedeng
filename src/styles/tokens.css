@@ -1,0 +1,211 @@
+/* 主题变量：viewer / options / popup / library 共用 */
+
+:root {
+  --ml-bg: #f1f2ee;
+  --ml-surface: #fffefa;
+  --ml-surface-2: #e9efea;
+  --ml-text: #283b37;
+  --ml-muted: #7c8881;
+  --ml-border: #e2e5df;
+  --ml-accent: #3c7566;
+  --ml-accent-weak: rgba(60, 117, 102, 0.12);
+  --ml-danger: #d64545;
+  --ml-ok: #2f9e44;
+  --ml-hl1: #ffe066;
+  --ml-hl2: #b2f2bb;
+  --ml-hl3: #a5d8ff;
+  --ml-canvas-bg: #fffefa;
+  --ml-shadow: 0 10px 30px rgba(15, 20, 30, 0.14);
+  --ml-radius: 10px;
+  --ml-radius-sm: 7px;
+  --ml-topbar-h: 68px;
+  --ml-sidebar-w: 360px;
+  /* pdf.js 文本层依赖，缺了会让字体尺寸算错 */
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --ml-bg: #14171c;
+  --ml-surface: #1b1f26;
+  --ml-surface-2: #22272f;
+  --ml-text: #e6e9ef;
+  --ml-muted: #98a2b3;
+  --ml-border: #2c333c;
+  --ml-accent: #7c93ff;
+  --ml-accent-weak: rgba(124, 147, 255, 0.16);
+  --ml-danger: #ff8080;
+  --ml-ok: #69db7c;
+  --ml-hl1: #9c7a1a;
+  --ml-hl2: #2f6b3a;
+  --ml-hl3: #2b5d8a;
+  --ml-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='auto'] {
+    --ml-bg: #14171c;
+    --ml-surface: #1b1f26;
+    --ml-surface-2: #22272f;
+    --ml-text: #e6e9ef;
+    --ml-muted: #98a2b3;
+    --ml-border: #2c333c;
+    --ml-accent: #7c93ff;
+    --ml-accent-weak: rgba(124, 147, 255, 0.16);
+    --ml-danger: #ff8080;
+    --ml-ok: #69db7c;
+    --ml-hl1: #9c7a1a;
+    --ml-hl2: #2f6b3a;
+    --ml-hl3: #2b5d8a;
+    --ml-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--ml-bg);
+  color: var(--ml-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+}
+
+button {
+  font: inherit;
+  color: var(--ml-text);
+  background: var(--ml-surface);
+  border: 1px solid var(--ml-border);
+  border-radius: var(--ml-radius-sm);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--ml-surface-2);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--ml-accent);
+  border-color: var(--ml-accent);
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+button.icon {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: var(--ml-text);
+  background: var(--ml-surface);
+  border: 1px solid var(--ml-border);
+  border-radius: var(--ml-radius-sm);
+  padding: 6px 8px;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: 2px solid var(--ml-accent-weak);
+  border-color: var(--ml-accent);
+}
+
+a {
+  color: var(--ml-accent);
+}
+
+.ml-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ml-surface-2);
+  border: 1px solid var(--ml-border);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ml-muted {
+  color: var(--ml-muted);
+}
+
+.ml-card {
+  background: var(--ml-surface);
+  border: 1px solid var(--ml-border);
+  border-radius: var(--ml-radius);
+  box-shadow: var(--ml-shadow);
+}
+
+/* toast */
+.ml-toast-host {
+  position: fixed;
+  top: 56px;
+  right: 14px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.ml-toast {
+  background: var(--ml-surface);
+  border: 1px solid var(--ml-border);
+  border-left: 3px solid var(--ml-accent);
+  border-radius: var(--ml-radius-sm);
+  box-shadow: var(--ml-shadow);
+  padding: 8px 12px;
+  max-width: 320px;
+  font-size: 13px;
+  opacity: 1;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.ml-toast--error {
+  border-left-color: var(--ml-danger);
+}
+
+.ml-toast--success {
+  border-left-color: var(--ml-ok);
+}
+
+.ml-toast--out {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--ml-accent); outline-offset: 3px; }
+[hidden] { display: none !important; }

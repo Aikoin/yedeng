@@ -1,0 +1,96 @@
+/* Formula source, editable transcription and render stay together inside the assistant. */
+.yd-formula-workspace { min-width:0; max-width:100%; font-size:13px; line-height:1.8; color:var(--ml-text); padding-top:26px; border-top:1px solid var(--ml-border); }
+.yd-formula-workspace:empty { display:none; }
+.yd-formula-heading { margin:0 0 23px; }
+.yd-formula-heading h2 { font-size:22px; line-height:1.5; font-weight:550; letter-spacing:-.4px; margin:10px 0 14px; }
+.yd-formula-heading p { color:var(--ml-muted); font-size:12px; line-height:1.85; margin:0; }
+.yd-formula-workspace > select { margin:0 0 17px; }
+.yd-formula-workspace select,.yd-formula-workspace textarea { width:100%; min-width:0; font-size:12px; line-height:1.8; background:var(--ml-surface); color:var(--ml-text); border:1px solid var(--ml-border); border-radius:6px; padding:9px 10px; }
+.yd-formula-workspace textarea { display:block; margin-top:8px; resize:vertical; min-height:95px; max-height:360px; tab-size:2; }
+.yd-formula-workspace label { display:block; font-size:12px; font-weight:500; }
+.yd-formula-workspace label > select { margin-top:8px; }
+.yd-formula-workspace h3 { font-size:13px; font-weight:550; line-height:1.7; margin:19px 0 11px; }
+.yd-formula-add { border-bottom:1px solid var(--ml-border); padding-bottom:19px; margin-bottom:18px; }
+.yd-formula-controls { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:10px; }
+.yd-formula-controls button,.yd-formula-workspace > button { font-size:11px; padding:6px 8px; min-height:30px; line-height:1.6; white-space:normal; overflow-wrap:anywhere; }
+.yd-formula-controls button.ghost { color:var(--ml-accent); }
+.yd-formula-revision { display:flex; flex-direction:column; gap:6px; margin:0 0 17px; font-size:11px; }
+.yd-formula-revision strong { font-size:12px; font-weight:550; }
+.yd-formula-reviewed { color:var(--ml-accent); }
+.yd-formula-unreviewed { color:#967e3e; }
+.yd-formula-comparison { display:grid; grid-template-columns:minmax(0,1fr); gap:22px; min-width:0; }
+.yd-formula-originals { max-height:250px; overflow:auto; scrollbar-width:thin; overscroll-behavior:contain; display:flex; flex-direction:column; gap:12px; min-width:0; }
+.yd-formula-segment { padding:12px; border:1px solid var(--ml-border); border-radius:7px; background:var(--ml-surface); min-width:0; }
+.yd-formula-segment-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+.yd-formula-segment-head strong { font-size:11px; font-weight:550; }
+.yd-formula-segment-head > button { padding:3px 5px; font-size:10px; color:var(--ml-accent); white-space:nowrap; }
+.yd-formula-image { display:block; min-width:0; max-width:100%; min-height:50px; max-height:240px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; background:#fff; border:1px solid var(--ml-border); margin-top:9px; }
+.yd-formula-image img { display:block; max-width:100%; width:100%; height:auto; object-fit:contain; margin:0; padding:4px; }
+.yd-formula-image.is-zoomed img { max-width:none; width:auto; padding:0; }
+.yd-formula-segment details { font-size:11px; margin-top:12px; color:var(--ml-muted); }
+.yd-formula-segment details summary { cursor:pointer; }
+.yd-formula-segment details select { margin:10px 0 5px; font-size:11px; }
+.yd-formula-segment details button { font-size:11px; padding:5px 7px; }
+.yd-formula-source { min-width:0; }
+.yd-formula-source textarea { font:12px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; min-height:110px; }
+.yd-formula-preview { min-width:0; padding:13px 12px; border:1px solid var(--ml-border); border-radius:6px; background:var(--ml-surface); }
+.yd-formula-math { overflow:auto; max-width:100%; padding:4px 0 11px; scrollbar-width:thin; }
+.yd-formula-math .katex-display { margin:.5em 0; text-align:left; }
+.yd-formula-math .katex-display > .katex { text-align:left; white-space:nowrap; }
+.yd-formula-math .katex { font-size:1.05em; }
+.yd-formula-preview small { display:block; margin-top:7px; font-size:10px; line-height:1.8; }
+.yd-formula-ai { margin:25px 0; border-top:1px solid var(--ml-border); padding-top:4px; }
+.yd-formula-ai > p { font-size:11px; color:var(--ml-muted); line-height:1.85; margin:10px 0; }
+.yd-formula-request:empty { display:none; }
+.yd-formula-request { margin-top:19px; padding:14px 0 18px; border-top:1px solid var(--ml-border); border-bottom:1px solid var(--ml-border); }
+.yd-formula-request .yd-target { white-space:pre-line; }
+.yd-formula-request h3 { margin-top:0; }
+.yd-formula-request > .yd-formula-controls > .yd-primary { flex:1 1 100%; font-size:12px; min-height:36px; }
+.yd-formula-request > .yd-formula-controls > button { font-size:11px; }
+.yd-formula-history { border-top:1px solid var(--ml-border); margin-top:20px; padding:16px 0; font-size:12px; }
+.yd-formula-history > summary { cursor:pointer; color:var(--ml-accent); font-size:12px; line-height:1.8; }
+.yd-formula-history-item,.yd-formula-candidate { border-bottom:1px solid var(--ml-border); padding:17px 0; font-size:12px; }
+.yd-formula-history-item:last-child,.yd-formula-candidate:last-child { border-bottom:0; }
+.yd-formula-candidate > small,.yd-formula-explanation > small { display:block; font-size:10px; margin-top:5px; }
+.yd-formula-workspace pre { white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; background:color-mix(in srgb,var(--ml-accent-weak) 45%,transparent); padding:11px; margin:11px 0; max-height:280px; overflow:auto; scrollbar-width:thin; border-radius:4px; }
+.yd-formula-candidate ul { margin:10px 0; padding-left:19px; font-size:11px; line-height:1.85; color:var(--ml-muted); }
+.yd-formula-candidate > button,.yd-formula-history-item > button { font-size:11px; color:var(--ml-accent); padding:6px 8px; }
+.yd-formula-explanations { border-top:1px solid var(--ml-border); margin:22px 0; padding-top:1px; }
+.yd-formula-explanation { padding:16px 0; border-bottom:1px solid var(--ml-border); font-size:12px; }
+.yd-formula-explanation > strong { font-size:11px; font-weight:550; }
+.yd-formula-explanation > pre { background:transparent; font:13px/1.9 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; padding:0; max-height:420px; }
+.yd-formula-explanation[data-stale=true] > strong { color:#967e3e; }
+.yd-formula-explanation[data-stale=true] > pre { border-left:2px solid #b6a576; padding-left:12px; color:var(--ml-muted); }
+.yd-formula-workspace > .yd-status:empty { display:none; }
+@media(max-width:800px) { .yd-formula-heading h2 { font-size:21px; } .yd-formula-controls { gap:5px; } }
+@media(prefers-reduced-motion:reduce) { .yd-formula-workspace * { scroll-behavior:auto!important; } }
+
+.yd-formula-snapshot { font-size:11px; padding:12px 0; }
+.yd-formula-snapshot > summary { color:var(--ml-accent); cursor:pointer; line-height:1.8; }
+.yd-formula-snapshot-images { max-height:230px; overflow:auto; scrollbar-width:thin; padding-top:9px; }
+.yd-formula-snapshot-images figure { margin:0 0 11px; }
+.yd-formula-snapshot-images figcaption { font-size:10px; color:var(--ml-muted); margin-bottom:5px; }
+.yd-formula-snapshot-images img { display:block; max-width:100%; width:100%; height:auto; background:#fff; border:1px solid var(--ml-border); }
+
+/* Expanded comparison is temporary and scoped to the visible formula task panel. */
+.yd-formula-workspace { container-type:inline-size; container-name:formula-workspace; }
+.yd-formula-heading-controls { display:flex; margin-top:15px; }
+.yd-formula-heading-controls button { font-size:12px; color:var(--ml-accent); border:1px solid var(--ml-border); border-radius:6px; padding:6px 11px; background:transparent; }
+body:has([data-panel=formulas]:not([hidden]) .yd-formula-workspace.is-expanded) .ml-sidebar {
+  width:min(760px,calc(100vw - 320px));
+  flex-basis:min(760px,calc(100vw - 320px));
+  max-width:min(760px,calc(100vw - 320px));
+}
+@container formula-workspace (min-width:600px) {
+  .yd-formula-comparison { grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr); align-items:start; gap:22px; }
+  .yd-formula-originals { position:sticky; top:0; max-height:min(66vh,650px); }
+  .yd-formula-source textarea { min-height:180px; }
+  .yd-formula-preview { min-height:100px; }
+}
+@media(max-width:800px) {
+  body:has([data-panel=formulas]:not([hidden]) .yd-formula-workspace.is-expanded) .ml-sidebar {
+    width:min(760px,90vw);
+    flex-basis:min(760px,90vw);
+    max-width:90vw;
+  }
+}

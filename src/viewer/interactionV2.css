@@ -1,0 +1,401 @@
+/* Approved interaction V2: paper, quiet hierarchy and contextual object details.
+   DOM / state ownership stays in the feature modules. These rules do not conceal legacy flows. */
+:where(.yd-object-bar,.yd-object-heading,.yd-object-actions,.yd-object-answer,.yd-object-composer,.yd-object-images,.yd-object-dialog,.yd-pin-tray,.yd-notebook-filters,.yd-notebook-object,.yd-note-section,.yd-chat-context) {
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+}
+:where(.yd-object-bar,.yd-object-heading,.yd-object-answer,.yd-object-composer,.yd-object-dialog,.yd-notebook-object,.yd-note-section) {
+  color:var(--ml-text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  font-size:13px;
+  line-height:1.85;
+}
+.yd-object-bar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:8px;
+  position:sticky;
+  top:0;
+  z-index:6;
+  background:var(--ml-surface);
+  border-bottom:1px solid var(--ml-border);
+  padding:0 0 14px;
+  margin:0 0 22px;
+  flex:none;
+}
+.yd-object-bar button {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:30px;
+  border:0;
+  background:transparent;
+  padding:4px 6px;
+  color:var(--ml-accent);
+  font-size:11px;
+  line-height:1.6;
+  white-space:normal;
+}
+.yd-object-bar > :is(span,small) { color:var(--ml-muted); font-size:10px; line-height:1.7; }
+.yd-object-heading {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  column-gap:10px;
+  row-gap:7px;
+  margin:0 0 17px;
+}
+.yd-object-heading :is(h1,h2,h3) {
+  min-width:0;
+  margin:0;
+  font-size:20px;
+  font-weight:550;
+  letter-spacing:-.4px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.yd-object-heading > :is(span,small),
+.yd-object-heading :is(p,.ml-muted) { color:var(--ml-muted); font-size:11px; line-height:1.75; margin:4px 0 0; }
+.yd-object-heading > button { flex:none; font-size:11px; color:var(--ml-accent); padding:4px 6px; }
+.yd-object-actions {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:17px 0 20px;
+}
+.yd-object-actions button {
+  min-width:0;
+  min-height:35px;
+  padding:7px 11px;
+  font-size:12px;
+  line-height:1.6;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.yd-object-actions :is(.primary,.yd-primary,[data-primary=true]) {
+  background:var(--ml-accent);
+  border-color:var(--ml-accent);
+  color:#fff;
+}
+.yd-object-actions :is(.primary,.yd-primary,[data-primary=true]):hover:not(:disabled) { background:var(--ml-accent); filter:brightness(1.07); }
+.yd-object-actions :is(.ghost,.yd-secondary,.secondary) { color:var(--ml-accent); background:transparent; }
+.yd-object-actions :is(.outline-button,.yd-secondary) { border:1px solid var(--ml-border); }
+.yd-object-actions > :is(p,small) { width:100%; margin:0; color:var(--ml-muted); font-size:11px; line-height:1.8; }
+.yd-object-answer { margin:20px 0; overflow-wrap:anywhere; }
+.yd-object-answer > :is(h2,h3) { font-size:15px; font-weight:550; line-height:1.65; margin:9px 0 13px; }
+.yd-object-answer p { font-size:13px; line-height:1.9; margin:0 0 14px; }
+.yd-object-answer ul,.yd-object-answer ol { margin:10px 0 16px; padding-left:21px; line-height:1.9; }
+.yd-object-answer li { margin:5px 0; }
+.yd-object-answer > pre { max-height:none; overflow:visible; white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; padding:0; margin:0 0 15px; background:transparent; }
+.yd-object-answer :is(pre code,code) { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; }
+.yd-object-answer :is(small,.yd-answer-meta) { color:var(--ml-muted); font-size:10px; line-height:1.8; }
+.yd-object-answer blockquote { border-left:2px solid color-mix(in srgb,var(--ml-accent) 30%,var(--ml-border)); padding-left:13px; margin:16px 0; color:var(--ml-muted); }
+.yd-object-answer[data-stale=true] { border-left:2px solid #b6a576; padding-left:12px; }
+.yd-object-answer[data-stale=true] > :is(small,.yd-answer-meta) { color:#967e3e; }
+.yd-object-answer :is(a,button) { overflow-wrap:anywhere; }
+.yd-object-answer > .yd-object-actions { gap:12px; margin:16px 0; }
+.yd-object-answer > .yd-object-actions button { min-height:27px; border:0; padding:3px 0; font-size:11px; color:var(--ml-accent); }
+.yd-object-composer {
+  position:sticky;
+  bottom:0;
+  z-index:7;
+  flex:none;
+  margin-top:auto;
+  padding:10px;
+  border:1px solid color-mix(in srgb,var(--ml-accent) 20%,var(--ml-border));
+  border-radius:10px;
+  background:var(--ml-surface);
+  box-shadow:0 2px 12px #293c2f08;
+}
+.yd-object-composer textarea {
+  display:block;
+  width:100%;
+  min-width:0;
+  min-height:56px;
+  max-height:160px;
+  margin:0 0 7px;
+  resize:vertical;
+  padding:4px;
+  border:0;
+  background:transparent;
+  border-radius:4px;
+  font-size:12px;
+  line-height:1.8;
+}
+.yd-object-composer > :is(.ml-row,.yd-composer-actions,footer) { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; }
+.yd-object-composer :is(small,.ml-muted) { font-size:10px; line-height:1.65; }
+.yd-object-composer button { min-height:31px; padding:6px 11px; font-size:11px; line-height:1.6; white-space:normal; }
+.yd-object-composer :is(.primary,.yd-primary) { color:#fff; background:var(--ml-accent); border-color:var(--ml-accent); }
+.yd-chat-context {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:8px;
+  padding:7px 9px;
+  margin:0 0 8px;
+  background:var(--ml-accent-weak);
+  border-radius:5px;
+  color:var(--ml-accent);
+  font-size:11px;
+  line-height:1.75;
+  overflow-wrap:anywhere;
+}
+.yd-chat-context > :is(span,p,div) { min-width:0; flex:1; margin:0; }
+.yd-chat-context > button { flex:none; min-height:25px; min-width:25px; padding:1px 5px; color:inherit; border:0; background:transparent; }
+.yd-object-images { display:flex; flex-direction:column; gap:13px; margin:0 0 19px; min-width:0; }
+.yd-object-images figure { min-width:0; margin:0; }
+.yd-object-images figcaption { color:var(--ml-muted); font-size:10px; line-height:1.75; margin:7px 0 0; }
+.yd-object-images img {
+  display:block;
+  width:100%;
+  max-width:100%;
+  height:auto;
+  max-height:none;
+  object-fit:contain;
+  border:1px solid var(--ml-border);
+  border-radius:6px;
+  background:#fff;
+}
+.yd-object-images .yd-formula-image { margin-top:0; max-height:320px; }
+.yd-object-images .yd-formula-image img { border:0; border-radius:0; }
+.yd-object-images .yd-formula-image.is-zoomed img { width:auto; max-width:none; }
+.yd-object-images > :is(p,small) { font-size:11px; line-height:1.8; color:var(--ml-muted); margin:0; }
+
+/* Native dialogs keep all correction and history content locally scrollable. */
+.yd-object-dialog {
+  position:fixed;
+  width:min(720px,calc(100vw - 36px));
+  max-width:calc(100vw - 36px);
+  max-height:calc(100dvh - 48px);
+  padding:25px;
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  border:1px solid var(--ml-border);
+  border-radius:12px;
+  background:var(--ml-surface);
+  box-shadow:0 20px 80px #1d332b38;
+}
+.yd-object-dialog::backdrop { background:#24352c55; backdrop-filter:blur(2px); }
+.yd-object-dialog > :is(header,.yd-dialog-heading) { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin:0 0 20px; }
+.yd-object-dialog > :is(header,.yd-dialog-heading) :is(h1,h2,h3) { margin:0; font-size:19px; line-height:1.5; font-weight:550; }
+.yd-object-dialog > :is(header,.yd-dialog-heading) > button { flex:none; min-width:31px; min-height:31px; padding:4px 7px; border:0; background:transparent; }
+.yd-object-dialog :is(p,li) { font-size:12px; line-height:1.85; }
+.yd-object-dialog label { display:block; margin:14px 0 8px; font-size:12px; font-weight:500; }
+.yd-object-dialog :is(textarea,input,select) { max-width:100%; width:100%; font-size:12px; line-height:1.8; }
+.yd-object-dialog textarea { display:block; min-height:100px; max-height:340px; margin:9px 0 12px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+.yd-object-dialog :is(.yd-dialog-grid,.yd-object-dialog-grid,.yd-formula-comparison) { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:17px; align-items:start; }
+.yd-object-dialog :is(.yd-dialog-grid,.yd-object-dialog-grid,.yd-formula-comparison) > * { min-width:0; }
+.yd-object-dialog .yd-object-images { margin:0; }
+.yd-object-dialog .yd-formula-math { overflow:auto; padding:12px 10px; background:var(--ml-surface); border:1px solid var(--ml-border); border-radius:7px; }
+.yd-object-dialog pre { min-width:0; max-width:100%; max-height:260px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:11px/1.8 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--ml-accent-weak); padding:12px; border-radius:6px; }
+.yd-object-dialog > :is(footer,.yd-dialog-actions,.yd-object-actions) { display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:9px; margin:21px 0 0; }
+.yd-object-dialog > :is(footer,.yd-dialog-actions) button { font-size:12px; min-height:33px; padding:7px 12px; }
+.yd-object-dialog :is(.primary,.yd-primary) { color:#fff; background:var(--ml-accent); border-color:var(--ml-accent); }
+.yd-object-dialog .yd-formula-history-item { padding:15px 0; }
+
+/* References use a short horizontal tray; image ratios are preserved. */
+.yd-pin-tray {
+  flex:none;
+  display:flex;
+  align-items:stretch;
+  gap:11px;
+  padding:10px 12px;
+  margin:0 18px 14px;
+  max-height:135px;
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  border:1px solid color-mix(in srgb,var(--ml-accent) 18%,var(--ml-border));
+  background:var(--ml-surface);
+  border-radius:9px;
+  box-shadow:0 3px 12px #253a2810;
+  font-size:11px;
+  line-height:1.6;
+}
+.yd-pin-tray > :is(article,section,.yd-pin-item) { display:flex; align-items:center; gap:10px; flex:0 0 230px; min-width:0; max-width:300px; }
+.yd-pin-tray > :is(article,section,.yd-pin-item) + :is(article,section,.yd-pin-item) { border-left:1px solid var(--ml-border); padding-left:11px; }
+.yd-pin-tray img { width:76px; height:60px; flex:none; object-fit:contain; border:1px solid var(--ml-border); border-radius:5px; background:#fff; }
+.yd-pin-tray :is(strong,h3) { display:block; font-size:11px; font-weight:550; line-height:1.6; margin:0; overflow-wrap:anywhere; }
+.yd-pin-tray :is(p,small) { font-size:10px; line-height:1.6; color:var(--ml-muted); margin:3px 0 0; }
+.yd-pin-tray button { min-width:0; font-size:10px; line-height:1.6; padding:3px 5px; white-space:normal; }
+.yd-pin-tray > button { flex:none; align-self:center; }
+
+/* Saved objects share one notebook rather than separate feature dashboards. */
+.yd-notebook-filters { display:flex; flex-wrap:wrap; gap:5px; margin:9px 0 20px; }
+.yd-notebook-filters button { min-height:29px; padding:5px 9px; font-size:11px; line-height:1.6; border:0; background:transparent; }
+.yd-notebook-filters :is(.active,.is-active,[aria-pressed=true],[aria-selected=true]) { color:var(--ml-accent); background:var(--ml-accent-weak); }
+.yd-notebook-object {
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:10px;
+  padding:17px 0 19px;
+  border-bottom:1px solid var(--ml-border);
+}
+.yd-notebook-object:first-child { padding-top:4px; }
+.yd-notebook-object > :is(header,.meta,.yd-note-meta) { display:flex; align-items:flex-start; justify-content:space-between; gap:9px; font-size:10px; line-height:1.8; color:var(--ml-muted); }
+.yd-notebook-object :is(h2,h3,strong) { font-size:13px; line-height:1.7; font-weight:550; margin:0; overflow-wrap:anywhere; }
+.yd-notebook-object p { margin:0; font-size:12px; line-height:1.85; overflow-wrap:anywhere; }
+.yd-notebook-object img { display:block; width:100%; max-width:100%; height:auto; max-height:155px; object-fit:contain; background:#fff; border:1px solid var(--ml-border); border-radius:5px; }
+.yd-notebook-object > :is(footer,.yd-object-actions,.ml-row) { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:0; }
+.yd-notebook-object button { font-size:11px; line-height:1.65; color:var(--ml-accent); min-height:26px; padding:3px 4px; border:0; background:transparent; text-align:left; white-space:normal; }
+.yd-notebook-object[data-stale=true] > :is(header,.meta,.yd-note-meta) { color:#967e3e; }
+.yd-note-section { padding:0 0 22px; border-bottom:1px solid var(--ml-border); margin-bottom:23px; }
+.yd-note-section:last-child { border-bottom:0; }
+.yd-note-section > :is(h2,h3) { font-size:13px; font-weight:550; line-height:1.7; margin:0 0 13px; }
+.yd-note-section > :is(p,small) { font-size:12px; line-height:1.85; color:var(--ml-muted); margin:0 0 12px; }
+.yd-note-section textarea { width:100%; min-width:0; min-height:90px; font-size:12px; line-height:1.8; }
+
+@media(max-width:800px) {
+  .yd-object-dialog { width:calc(100vw - 28px); max-width:calc(100vw - 28px); max-height:calc(100dvh - 32px); padding:21px; }
+  .yd-pin-tray { margin:0 10px 10px; padding:9px 10px; }
+}
+@media(max-width:560px) {
+  .yd-object-dialog :is(.yd-dialog-grid,.yd-object-dialog-grid,.yd-formula-comparison) { grid-template-columns:minmax(0,1fr); gap:18px; }
+  .yd-object-dialog > :is(footer,.yd-dialog-actions,.yd-object-actions) { justify-content:flex-start; }
+  .yd-object-dialog > :is(footer,.yd-dialog-actions,.yd-object-actions) button { flex:1 1 auto; }
+  .yd-object-heading :is(h1,h2,h3) { font-size:19px; }
+  .yd-pin-tray > :is(article,section,.yd-pin-item) { flex-basis:220px; }
+}
+@media(max-height:620px) {
+  .yd-object-dialog { max-height:calc(100dvh - 24px); padding:19px; }
+  .yd-object-composer textarea { min-height:43px; max-height:110px; }
+  .yd-object-composer { padding:8px; }
+  .yd-pin-tray { max-height:105px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  :is(.yd-object-dialog,.yd-object-images,.yd-pin-tray) { scroll-behavior:auto!important; }
+}
+
+/* New detail surfaces inherit feature wrappers without the old workspace separator. */
+:is(.yd-formula-workspace,.yd-evidence-workspace):has(> .yd-object-bar) { padding-top:0; border-top:0; }
+
+/* Detail panels have one content scrollport. The composer is a real flex row,
+   never a sticky overlay on an original image or a primary action. */
+.ml-tabpanel:is([data-panel=formulas],[data-panel=figures],[data-panel=selection]) {
+  padding:0;
+  gap:0;
+  overflow:hidden;
+  min-height:0;
+}
+:is(#formula-workspace,#evidence-workspace,#request-workspace) {
+  display:flex;
+  flex-direction:column;
+  flex:1 1 0%;
+  min-height:0;
+  min-width:0;
+  height:100%;
+  max-height:100%;
+  overflow:hidden;
+  padding:0;
+  border-top:0;
+}
+:is(#formula-workspace,#evidence-workspace,#request-workspace) > .yd-object-bar {
+  position:static;
+  flex:0 0 auto;
+  min-height:47px;
+  padding:11px 20px;
+  margin:0;
+}
+:is(#formula-workspace,#evidence-workspace) > .yd-object-content,
+#request-workspace > .yd-workspace-body {
+  flex:1 1 0%;
+  min-height:0;
+  min-width:0;
+  overflow:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  padding:23px 24px 26px;
+}
+:is(#formula-workspace,#evidence-workspace) > .yd-object-content { display:block; }
+:is(#formula-workspace,#request-workspace) > .yd-object-composer {
+  position:static;
+  flex:0 0 auto;
+  z-index:auto;
+  width:auto;
+  max-width:none;
+  margin:0 18px 14px;
+}
+:is(#formula-workspace,#evidence-workspace,#request-workspace) > .yd-object-heading {
+  flex:none;
+  padding:22px 24px 0;
+}
+:is(#formula-workspace,#evidence-workspace) > button {
+  align-self:flex-start;
+  flex:none;
+  margin:0 24px 24px;
+}
+#formula-crop-workspace {
+  flex:1 1 0%;
+  min-height:0;
+  min-width:0;
+  overflow:auto;
+  overscroll-behavior:contain;
+  padding:0 24px 24px;
+}
+#formula-crop-workspace > .yd-object-bar { position:static; margin:0 -4px 20px; padding-block:12px; }
+.yd-object-heading > small { flex:0 0 100%; width:100%; margin:0; }
+.yd-object-heading > .ml-row { width:100%; min-width:0; justify-content:space-between; align-items:flex-start; gap:10px; }
+.yd-object-heading > .ml-row > :is(h1,h2,h3) { min-width:0; flex:1 1 auto; }
+.yd-object-heading > .ml-row > button { flex:none; padding:4px 5px; font-size:11px; color:var(--ml-accent); }
+
+/* Normal home panels keep their ordinary single-column reading flow. */
+.ml-tabpanel[data-panel=ai],.ml-tabpanel[data-panel=marks] { overflow:auto; min-height:0; }
+.ml-tabpanel[data-panel=chat] { min-height:0; overflow:hidden; }
+.ml-tabpanel[data-panel=chat] > .ml-chat { min-height:0; height:100%; margin:0; padding-bottom:0; }
+.ml-tabpanel[data-panel=chat] .ml-chat__log { flex:1 1 0%; min-height:0; max-height:none; overflow:auto; }
+.ml-tabpanel[data-panel=chat] .ml-chat__actions { flex:none; padding-top:10px; }
+
+/* Compact actual pin DOM: small label + three horizontally scrollable thumbnails. */
+.yd-pin-tray {
+  align-items:center;
+  gap:9px;
+  padding:8px 10px;
+  max-height:88px;
+  overflow-x:auto;
+  overflow-y:hidden;
+}
+.yd-pin-tray > small { flex:0 0 auto; align-self:center; white-space:nowrap; font-size:10px; margin:0; }
+.yd-pin-tray > .yd-pin-item {
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  gap:3px;
+  min-width:0;
+  max-width:220px;
+  padding:0;
+}
+.yd-pin-tray > .yd-pin-item + .yd-pin-item { padding-left:9px; }
+.yd-pin-item > button:first-child {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  max-width:180px;
+  min-height:48px;
+  padding:2px;
+  text-align:left;
+  border:0;
+  background:transparent;
+}
+.yd-pin-item > button:first-child img { display:block; width:62px; height:46px; flex:0 0 62px; object-fit:contain; padding:2px; }
+.yd-pin-item > button:first-child > span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; min-width:0; max-width:102px; font-size:10px; line-height:1.6; }
+.yd-pin-item > button:last-child { flex:0 0 24px; width:24px; min-width:24px; min-height:25px; padding:2px; align-self:flex-start; }
+@media(max-width:800px) {
+  :is(#formula-workspace,#evidence-workspace) > .yd-object-content,
+  #request-workspace > .yd-workspace-body { padding:21px 21px 23px; }
+  :is(#formula-workspace,#request-workspace) > .yd-object-composer { margin:0 14px 12px; }
+}
+@media(max-height:620px) {
+  :is(#formula-workspace,#evidence-workspace,#request-workspace) > .yd-object-bar { min-height:40px; padding-block:8px; }
+  :is(#formula-workspace,#request-workspace) > .yd-object-composer { margin-bottom:9px; }
+  .yd-pin-tray { max-height:78px; }
+}

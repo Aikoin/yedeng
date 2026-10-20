@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>页灯 · 论文精读</title><link rel="icon" type="image/png" sizes="32x32" href="/icons/32.png?v=0.1.2" />
+    <link rel="stylesheet" href="../styles/tokens.css" />
+    <link rel="stylesheet" href="./viewer.css" />
+  </head>
+  <body class="ml-viewer">
+    <header class="ml-topbar">
+      <div class="ml-topbar__left">
+        <button id="btn-library" class="ml-brand ghost" title="打开文献库"><img class="ml-brand-symbol" src="/icons/brand.svg?v=0.1.2" alt="" /><span>页灯<small>YEDENG</small></span></button>
+        <span class="ml-topbar-rule"></span>
+        <div class="ml-document-heading"><span class="ml-doc-title" id="doc-title">开始一段阅读</span><span class="ml-doc-meta" id="doc-meta">打开 PDF，沿着问题慢慢读懂</span><button id="btn-save-pdf" class="ghost" hidden>保存 PDF 到本机</button><span id="local-copy-status" class="ml-muted" role="status" hidden></span></div>
+      </div>
+      <div class="ml-topbar__right">
+        <button id="btn-open-local" class="ghost" title="打开本地 PDF">打开 PDF</button>
+        <button id="btn-add-library" class="ghost">收藏</button>
+        <button id="btn-focus" class="ml-pill" aria-pressed="false">专注阅读</button>
+        <button id="btn-settings" class="icon ghost" title="设置" aria-label="设置"><svg class="ml-ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg></button>
+      </div>
+    </header>
+    <div class="ml-loadbar"><div class="ml-loadbar__inner" id="loadbar"></div></div>
+
+    <main class="ml-main">
+      <nav class="ml-outline" id="outline" aria-label="论文目录">
+        <div class="ml-outline-heading"><strong>文档目录</strong><span id="outline-kind">等待文献</span></div>
+        <div id="outline-list" class="ml-outline-list"><p class="ml-muted">打开论文后显示目录</p></div>
+        <div class="ml-reading-progress"><span id="reading-progress">尚未打开文献</span><progress id="reading-progress-bar" value="0" max="100"></progress></div>
+      </nav>
+      <section class="ml-reading-area" aria-label="PDF 阅读区">
+        <div class="ml-reader-tools">
+          <div class="ml-row"><button id="btn-outline" class="ghost" title="展开或收起目录" aria-expanded="true" aria-label="展开或收起目录"><svg class="ml-ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM10 5v14M14 9h3M14 13h3"/></svg><span class="ml-tool-label">目录</span></button><span class="ml-tool-rule"></span><button id="btn-region-select" class="ghost" aria-pressed="false" title="在图或表上拖框，保存原图并置顶">框选图表</button><button id="btn-formula-select" class="ghost" title="框选公式原图，识别或解释">框选公式</button><button id="btn-search" class="ghost" title="搜索论文 Ctrl/Cmd+F" aria-label="搜索论文"><svg class="ml-ui-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><span class="ml-tool-label">搜索</span></button><button id="btn-return-position" class="ghost" disabled title="返回上次跳转前的位置" aria-label="返回上次跳转前的位置"><svg class="ml-ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12"/></svg><span class="ml-tool-label">返回</span></button></div>
+          <div class="ml-row ml-page-controls"><button id="btn-page-prev" class="icon ghost" aria-label="上一页">‹</button><label class="ml-page-number">PDF <input id="page-number" type="number" min="1" value="1" aria-label="PDF 页码"></label><span id="page-indicator">0 / 0</span><button id="btn-page-next" class="icon ghost" aria-label="下一页">›</button><span class="ml-tool-rule"></span><button id="btn-zoom-out" class="icon ghost" title="缩小">−</button><button id="btn-zoom-label" class="ghost ml-zoom-label" title="重置为100%">100%</button><button id="btn-zoom-in" class="icon ghost" title="放大">+</button><button id="btn-fit-width" class="ghost">适宽</button><button id="btn-sidebar" class="ghost" aria-expanded="true">助手</button><details class="ml-reader-more"><summary aria-label="阅读工具">···</summary><div><button id="btn-back" class="ghost">返回来源</button><button id="btn-native" class="ghost">浏览器阅读器 ↗</button><button id="btn-theme" class="ghost">切换主题</button></div></details></div>
+        </div>
+        <section class="ml-search-bar" id="search-panel" aria-label="本地文内搜索" hidden>
+          <div class="ml-row"><input id="search-input" type="search" placeholder="在论文文字中查找" aria-label="搜索关键词" autocomplete="off"><span id="search-count" aria-live="polite">本地搜索</span><button id="search-prev" class="icon ghost" aria-label="上一个命中">↑</button><button id="search-next" class="icon ghost" aria-label="下一个命中">↓</button><button id="search-close" class="icon ghost" aria-label="关闭搜索">×</button></div>
+          <p id="search-coverage">尚未建立文字索引</p><div id="search-results"></div>
+        </section>
+        <div class="ml-scroll" id="scroller" tabindex="0" aria-label="论文正文"><div class="ml-pages" id="pages"></div><div id="placeholder"></div></div><div id="pinned-references" class="yd-pin-tray" hidden aria-label="置顶参考"></div>
+      </section>
+      <aside class="ml-sidebar" id="sidebar">
+        <div class="ml-assistant-heading"><span>阅读助手</span><small>让思考留在这一页</small><button id="btn-sidebar-close" class="icon ghost" aria-label="关闭阅读助手" title="关闭阅读助手"><svg class="ml-ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+        <div class="ml-tabs" role="tablist" aria-label="阅读助手">
+          <button data-tab="ai" class="is-active" role="tab" aria-selected="true">概览</button><button data-tab="chat" role="tab" aria-selected="false">提问</button><button data-tab="marks" role="tab" aria-selected="false">笔记</button>
+        </div>
+        <div class="ml-tabpanel" data-panel="ai"><div class="ml-reader-intro"><span class="ml-eyebrow">A LITTLE CONTEXT</span><h1>先看见全貌，<br>再走进细节。</h1><p>从一个问题开始，沿着目录、原文与批注，慢慢读懂这一篇。</p></div>
+          <section class="ml-section" id="panel-summary">
+            <div class="ml-section__head">
+              <span class="ml-section__title" >论文摘要</span>
+              <span class="ml-row">
+                <button id="btn-summary-regen" class="ghost" >生成</button>
+              </span>
+            </div>
+            <div class="ml-section__body" id="summary-body">
+              <span class="ml-muted">正在读取论文，摘要与关键词会自动生成。</span>
+            </div>
+          </section>
+
+          <section class="ml-section" id="panel-sections">
+            <div class="ml-section__head">
+              <span class="ml-section__title" data-i18n="sectionSummary">逐节摘要</span>
+              <span class="ml-row">
+                <button id="btn-sections-all" class="ghost">生成全部</button>
+                <button id="btn-sections-stop" class="ghost ml-hidden">停止</button>
+              </span>
+            </div>
+            <div class="ml-section__body">
+              <div class="ml-section-list" id="section-list"></div><div id="section-batch-result"></div>
+            </div>
+          </section>
+
+          <section class="ml-section" id="panel-keywords">
+            <div class="ml-section__head">
+              <span class="ml-section__title" data-i18n="keywords">关键词</span>
+              
+            </div>
+            <div class="ml-section__body">
+              <div class="ml-keywords" id="keywords-body">
+                <span class="ml-muted">尚未生成关键词</span>
+              </div>
+            </div>
+          </section>
+
+
+        </div>
+
+        <div class="ml-tabpanel" data-panel="selection" hidden><div id="request-workspace"></div></div><div class="ml-tabpanel" data-panel="chat" hidden><section class="ml-section ml-chat">
+            <div class="ml-section__head">
+              <span class="ml-section__title">论文对话</span>
+              <span class="ml-row">
+                <span class="ml-muted" id="chat-model-hint"></span>
+                <button id="btn-chat-clear" class="ghost" data-i18n="clearChat">清空对话</button>
+              </span>
+            </div>
+            <div class="ml-chat__log" id="chat-log"></div>
+            <div class="ml-chat__actions">
+              <textarea
+                id="chat-input"
+                rows="2"
+                
+                placeholder="问问这篇论文…"
+              ></textarea>
+              <button id="btn-chat-send" class="primary" data-i18n="send">发送</button>
+              <button id="btn-chat-stop" class="ml-hidden" data-i18n="stop">停止</button>
+            </div>
+          </section></div>
+        <div class="ml-tabpanel" data-panel="marks" hidden>
+          <div class="yd-note-export-row"><h2>阅读笔记</h2><button id="btn-export-reading" class="ghost">导出笔记</button></div>
+          <div id="notebook-filters" class="yd-notebook-filters"></div><div id="notebook-objects"></div><section id="notebook-text" class="yd-note-section"><div id="marks-list"></div><h3 class="ml-notes-label">阅读笔记</h3><div id="notes-list"></div></section>
+        </div>
+
+        <div class="ml-tabpanel" data-panel="figures" hidden><div id="evidence-workspace" class="yd-evidence-workspace"></div></div>
+        <div class="ml-tabpanel" data-panel="formulas" hidden><div id="formula-crop-workspace" hidden></div><div id="formula-workspace"></div></div>
+        <div class="ml-model-footer"><label for="model-select">文字模型</label><small>图片任务自动使用 Flash</small><button id="btn-setup-ai" class="ghost" style="font-size:11px">连接 AI 服务</button><select id="model-select" aria-label="选择模型"></select><details class="yd-reading-settings"><summary>阅读设置</summary><label><input id="auto-overview" type="checkbox" checked>打开时自动生成摘要与关键词</label><label><input id="document-ai-enabled" type="checkbox" checked>本篇使用 AI</label><small>摘要与关键词共用一次请求；重开优先使用本地结果。材料发送到你配置的服务。</small></details></div>
+      </aside>
+    </main>
+
+    <div id="toast-host"></div>
+    <input type="file" id="file-input" accept="application/pdf,.pdf" class="ml-hidden" />
+    <script type="module" src="./viewer.ts"></script>
+  </body>
+</html>

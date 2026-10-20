@@ -1,0 +1,9 @@
+.ml-anno-layer .ml-hl.ml-underline { background: transparent; border-bottom: 2px solid #21867b; box-sizing: border-box; mix-blend-mode: multiply; }
+.ml-anno-layer .ml-underline.ml-hl--1 { border-bottom-color: #bc8c24; }
+.ml-anno-layer .ml-underline.ml-hl--2 { border-bottom-color: #2b8d5b; }
+.ml-anno-layer .ml-underline.ml-hl--3 { border-bottom-color: #4f80bf; }
+
+.ml-annotation-conflict { padding: 10px; margin-bottom: 8px; border: 1px solid #c69444; border-radius: 8px; color: #674822; background: #fff7e7; font-size: 12px; }
+.ml-annotation-conflict p { margin: 0 0 8px; white-space: pre-wrap; }
+
+.yd-annotation-menu{position:fixed;z-index:1100;max-width:calc(100vw - 16px);padding:10px 12px;background:var(--ml-surface);color:var(--ml-text);box-shadow:var(--ml-shadow);border:1px solid var(--ml-border);border-radius:9px;font:12px/1.6 system-ui}.yd-annotation-menu small{color:var(--ml-muted)}.yd-annotation-actions,.yd-annotation-colors{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.yd-annotation-menu button{font-size:12px}.yd-annotation-remove{color:#a04d43}.yd-annotation-menu p:empty{display:none}
