@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks=vi.hoisted(()=>({
-  send:vi.fn(), prepare:vi.fn(), access:vi.fn(), toast:vi.fn(), persist:vi.fn(),
+  get:vi.fn(), send:vi.fn(), prepare:vi.fn(), access:vi.fn(), toast:vi.fn(), persist:vi.fn(),
   state:{docId:'doc',viewer:{},docText:{pages:[],sections:[]},info:{title:'Paper',numPages:2},index:null,settings:{providers:[],routing:{},prompts:{},cache:{enabled:true},reading:{}}} as any,
 }));
 vi.mock('../src/ai/dispatcher',()=>({productionDispatcher:()=>({prepare:mocks.prepare,send:mocks.send,subscribe:vi.fn(),invalidate:vi.fn()}),ensureReaderAiAccess:mocks.access,setDocumentAiPolicy:vi.fn()}));
 vi.mock('../src/ai/types',()=>{class AiOutputLimitError extends Error {constructor(public partialText:string,public maxTokens?:number){super('达到输出上限');}}return {AiOutputLimitError};});
 vi.mock('../src/ai/documentContext',()=>({prepareDocumentContext:()=>({messages:[],sources:[],coverage:'已提供全部文字'})}));
 vi.mock('../src/ai/preparedRequest',()=>({authorizeExplicitSend:()=>({}),supportsThinkingToggle:()=>false}));
-vi.mock('../src/shared/idb',()=>({idbGet:vi.fn(),idbPut:vi.fn()}));
+vi.mock('../src/shared/idb',()=>({idbGet:mocks.get,idbPut:vi.fn()}));
 vi.mock('../src/shared/settings',()=>({isConfigured:()=>true,loadSettings:vi.fn(),saveSettings:vi.fn()}));
 vi.mock('../src/shared/toast',()=>({toast:mocks.toast}));
 vi.mock('../src/shared/documentChat',()=>({persistDocumentChatTurn:mocks.persist}));
@@ -37,6 +37,7 @@ class Element {
 }
 const flat=(node:Element):Element[]=>[node,...node.children.flatMap(flat)];
 let elements:Record<string,Element>;
+let extracted:typeof import('../src/viewer/aiActions').onTextExtracted;
 let init:typeof import('../src/viewer/aiActions').initAiPanels;
 let reset:typeof import('../src/viewer/aiActions').resetAiPanels;
 const input=()=>elements['chat-input'];
@@ -51,10 +52,10 @@ beforeEach(async()=>{
   vi.stubGlobal('document',{querySelector:query,querySelectorAll:()=>[],getElementById:(id:string)=>elements[id],createElement:(tag:string)=>new Element(tag),createTextNode:(text:string)=>{const node=new Element('#text');node.textContent=text;return node;}});
   vi.stubGlobal('chrome',{runtime:{onMessage:{addListener:vi.fn()}},storage:{onChanged:{addListener:vi.fn()}}});vi.stubGlobal('BroadcastChannel',undefined);
   mocks.state.settings.cache.enabled=true;mocks.state.docId='doc';mocks.state.viewer={};
-  mocks.access.mockResolvedValue(true);mocks.prepare.mockResolvedValue({request:{id:'request',endpoint:'',model:''}});
+  mocks.get.mockResolvedValue(undefined);mocks.state.settings.reading={autoOverview:false};mocks.access.mockResolvedValue(true);mocks.prepare.mockResolvedValue({request:{id:'request',endpoint:'',model:''}});
   mocks.send.mockResolvedValue({text:'Answer'});
   let history:any[]=[];mocks.persist.mockImplementation(async(_id,turn)=>{history.push({role:'user',content:turn.question},{role:'assistant',content:turn.answer,sources:[]});return history;});
-  const module=await import('../src/viewer/aiActions');init=module.initAiPanels;reset=module.resetAiPanels;init();
+  const module=await import('../src/viewer/aiActions');init=module.initAiPanels;reset=module.resetAiPanels;extracted=module.onTextExtracted;init();
 });
 afterEach(()=>vi.unstubAllGlobals());
 describe('paper chat repeated send lifecycle',()=>{
@@ -67,16 +68,16 @@ describe('paper chat repeated send lifecycle',()=>{
     expect(elements['chat-log'].textContent).toContain('second');expect(button().hidden).toBe(false);
   });
   it('allows repeat sending with answer caching disabled',async()=>{
-    mocks.state.settings.cache.enabled=false;click('first');await settle();enter('second');await settle();expect(mocks.send).toHaveBeenCalledTimes(2);expect(mocks.persist).not.toHaveBeenCalled();
+    mocks.state.settings.cache.enabled=false;click('first');await settle();enter('second');await settle();expect(mocks.send).toHaveBeenCalledTimes(2);expect(mocks.persist).toHaveBeenCalledTimes(2);
   });
   it('releases the job after preparation fails and allows resending',async()=>{
     mocks.prepare.mockRejectedValueOnce(new Error('configuration changed'));click('first');await settle();expect(elements['chat-log'].textContent).toContain('configuration changed');enter('second');await settle();expect(mocks.send).toHaveBeenCalledTimes(1);
   });
   it('clears immediately and retries the captured question without consuming a new draft or duplicating bubbles',async()=>{
     mocks.send.mockRejectedValueOnce(new Error('failed'));click('original');expect(input().value).toBe('');await settle();
-    const count=elements['chat-log'].children.length;input().value='new draft';
+    input().value='new draft';
     const retry=flat(elements['chat-log']).find(n=>n.tagName==='button'&&n.textContent==='重试')!;retry.onclick();await settle();
-    expect(mocks.persist.mock.calls[0][1].question).toBe('original');expect(input().value).toBe('new draft');expect(elements['chat-log'].children.length).toBe(count);
+    expect(mocks.persist.mock.calls[0][1].question).toBe('original');expect(input().value).toBe('new draft');expect(elements['chat-log'].children.filter(n=>n.tagName==='article').length).toBe(2);
     expect(mocks.send.mock.calls[1][2]).toMatchObject({force:true,retryInterrupted:true});
   });
   it('manual send authorizes interrupted-task recovery without forcing past completed caches',async()=>{
@@ -99,6 +100,24 @@ describe('paper chat repeated send lifecycle',()=>{
     click('question');expect(log.scrollTop).toBe(900);await vi.waitFor(()=>expect(mocks.send).toHaveBeenCalledTimes(1));
     log.scrollTop=42;delta('**Live answer**');await vi.waitFor(()=>expect(log.textContent).toContain('Live answer'));expect(log.scrollTop).toBe(42);
     finish({text:'Final answer'});await settle();expect(log.scrollTop).toBe(42);expect(log.textContent).toContain('Final answer');
+  });
+  it('keeps completed answer visible when storage fails and retries only local saving',async()=>{
+    mocks.persist.mockRejectedValueOnce(new Error('disk unavailable'));click('question');await settle();
+    expect(elements['chat-log'].textContent).toContain('Answer');expect(elements['chat-log'].textContent).toContain('本地保存失败');
+    const retry=flat(elements['chat-log']).find(n=>n.tagName==='button'&&n.textContent==='重试保存')!;retry.onclick();
+    await vi.waitFor(()=>expect(mocks.persist).toHaveBeenCalledTimes(2));expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+  it('restores completed conversations after reset even with result cache disabled and overview loading stalled',async()=>{
+    mocks.state.settings.cache.enabled=false;click('last question');await settle();
+    const turn=mocks.persist.mock.calls[0][1];
+    mocks.get.mockImplementation((store,key)=>store==='chats'&&key==='doc:chat'?Promise.resolve({messages:[{role:'user',content:turn.question},{role:'assistant',content:turn.answer,sources:[]}]}):new Promise(()=>{}));
+    reset();init();extracted();
+    await vi.waitFor(()=>expect(elements['chat-log'].textContent).toContain('last question'));expect(elements['chat-log'].textContent).toContain('Answer');expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+  it('does not claim local saving is complete until the persistence promise commits',async()=>{
+    let commit!:(messages:any[])=>void;mocks.persist.mockImplementationOnce(()=>new Promise(r=>{commit=r;}));click('question');
+    await vi.waitFor(()=>expect(elements['chat-log'].textContent).toContain('正在保存对话'));expect(elements['chat-log'].textContent).not.toContain('已保存到本机');
+    commit([{role:'user',content:'question'},{role:'assistant',content:'Answer',sources:[]}]);await settle();expect(elements['chat-log'].textContent).toContain('已保存到本机');
   });
   it('recovers from network failure and keeps the failed question in its message bubble',async()=>{
     mocks.send.mockRejectedValueOnce(new Error('network unavailable'));enter('question');await settle();

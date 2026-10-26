@@ -20,7 +20,8 @@ import { parseOverview } from '../ai/overview';
 
 const dispatcher = productionDispatcher(() => ({ docId: state.docId, sessionGeneration: requestSessionGeneration() }));
 interface StoredAnswer extends ChatRecord { sources?: DocumentSource[]; sourceRevision?: string }
-let epoch = 0, registered = false;
+let epoch = 0, registered = false, restoreGeneration = 0;
+let chatRestored:Promise<void>=Promise.resolve();
 let job: { action: DocumentAction; docId: string; viewer: object; epoch: number; controller: AbortController; output?: HTMLElement } | null = null;
 let history: { role: 'user' | 'assistant'; content: string; at: number; sources?: DocumentSource[]; coverage?: string }[] = [];
 const featureFor = (action: DocumentAction): FeatureKey => action === 'overview' ? 'summary' : action === 'sectionBatch' ? 'sectionSummary' : action;
@@ -28,7 +29,7 @@ const keyFor = (action: DocumentAction, index?: number) => `${state.docId}:g4-${
 
 export function resetAiPanels(): void {
   document.querySelector('.yd-source-peek')?.remove();
-  epoch++; job?.controller.abort(); job = null; history = []; dispatcher.invalidate('已切换论文');
+  restoreGeneration++;chatRestored=Promise.resolve();epoch++; job?.controller.abort(); job = null; history = []; dispatcher.invalidate('已切换论文');
   setChatBusy(false);
   for (const id of ['summary-body','keywords-body','section-list','chat-log']) document.getElementById(id)?.replaceChildren();
 }
@@ -88,6 +89,7 @@ function showStreamingAnswer(output:HTMLElement,text:string,sources:DocumentSour
   const valid=sources.map(s=>({...s,pageIndices:s.pageIndices.filter(p=>Number.isSafeInteger(p)&&p>=0&&p<state.info.numPages)})).filter(s=>s.pageIndices.length);
   const pages=[...new Set(valid.flatMap(s=>s.pageIndices))];
   output.replaceChildren(renderMarkdown(text,{validPageIndices:pages,evidenceSources:valid,onEvidenceCite:id=>{const source=valid.find(s=>s.id===id);if(source)void openDocumentSource(source);},onCite:page=>{if(pages.includes(page))jumpToPage(page);}}));
+  output.append(h('small',{class:'ml-muted'},'正在生成，尚未保存…'));
 }
 function showAnswer(output:HTMLElement,text:string,sources:DocumentSource[],coverage?:string):void {
   sources=sources.map(source=>({...source,pageIndices:source.pageIndices.filter(page=>Number.isSafeInteger(page)&&page>=0&&page<state.info.numPages)})).filter(source=>source.pageIndices.length>0);
@@ -107,6 +109,7 @@ async function restore(key:string,output:HTMLElement|null,docId:string,viewer:ob
 }
 export function onTextExtracted():void {
   rebuildIndex();renderModelSelect();const docId=state.docId,viewer=state.viewer,version=++epoch;
+  restoreChatHistory(docId,viewer);
   qs('#summary-body').textContent=isConfigured(state.settings)?'正在整理这篇论文…':'连接 AI 服务后，自动生成摘要与关键词。';
   qs('#keywords-body').textContent='';const host=qs('#section-list');host.replaceChildren();
   const sections=state.docText?.sections.filter(s=>s.text.trim().length>120)??[];
@@ -128,9 +131,18 @@ export function onTextExtracted():void {
       else if(!old[0])qs('#summary-body').textContent=stored?.policy==='deny_all_ai'?'本篇已关闭 AI，可在下方阅读设置中开启。':!isConfigured(state.settings)?'连接 AI 服务后，自动生成摘要与关键词。':'自动概览已关闭，点击“重新生成”查看摘要。';
     }
     if(state.docId!==docId||state.viewer!==viewer||epoch!==version)return;
-    const saved=await idbGet('chats',`${docId}:chat`);if(state.docId!==docId||state.viewer!==viewer||epoch!==version)return;
-    history=saved?.messages.filter(m=>!m.error).map(m=>({...m,role:m.role as 'user'|'assistant'}))??[];renderChat();
   })().catch(error=>{if(state.docId===docId)qs('#summary-body').textContent=String(error);});
+}
+function restoreChatHistory(docId:string,viewer:object|null):void {
+  const generation=++restoreGeneration;
+  chatRestored=(async()=>{
+    try{
+      const saved=await idbGet('chats',`${docId}:chat`);
+      if(state.docId!==docId||state.viewer!==viewer||generation!==restoreGeneration)return;
+      history=saved?.messages.filter(m=>!m.error).map(m=>({...m,role:m.role as 'user'|'assistant'}))??[];
+      if(job?.action!=='chat')renderChat();
+    }catch{if(state.docId===docId&&generation===restoreGeneration)toast('本地对话暂未读取成功，请重新打开论文；没有删除历史记录','error');}
+  })();
 }
 function renderChat(scrollToLatest=true):void {
   const previousScroll=document.getElementById('chat-log')?.scrollTop??0;
@@ -178,6 +190,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     progress=h('div',{class:'yd-inline-progress'},h('span',{class:'ml-spinner'}),h('span',{},'生成中'),h('button',{class:'ghost'},'取消'));
     progress.querySelector('button')!.onclick=()=>owned.controller.abort();if(action!=='chat')output.before(progress);
     if(!await ensureReaderAiAccess(docId))throw new Error('本篇已关闭 AI，请在阅读设置中开启');if(!current())return;
+    if(action==='chat'){await chatRestored;if(!current())return;}
     const hits=action==='chat'&&state.index?retrievePaperChat(state.index,question,history):[];
     context=prepareDocumentContext({action,question,title:state.info.title,doc,totalPages:state.info.numPages,section,hits,history,custom:[state.settings.prompts[featureFor(action)],state.settings.prompts.custom].filter(Boolean).join('\n')});
     if(action==='chat')reply.textContent=context.coverage.startsWith('已提供全部')?'正在通读可提取的论文文字并组织回答…':'正在结合相关上下文与关键章节回答…';
@@ -194,7 +207,20 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     if(action==='overview')showOverview(result.text,context.sources);else showAnswer(reply,result.text,context.sources,context.coverage);
     if(action==='chat'){
       const at=Date.now();history.push({role:'user',content:question,at},{role:'assistant',content:result.text,at,sources:context.sources,coverage:context.coverage});
-      if(state.settings.cache.enabled){const merged=await persistDocumentChatTurn(docId,{id:prepared.request.id,question,answer:result.text,at,sources:context.sources,coverage:context.coverage});if(current()){history=merged;renderChat(false);}}
+      // Conversation history is user data, independent of reusable model-result caching.
+      const turn={id:prepared.request.id,question,answer:result.text,at,sources:context.sources,coverage:context.coverage};
+      const notice=h('small',{class:'ml-muted'},'正在保存对话…');reply.append(notice);
+      const save=async()=>{
+        try{const merged=await persistDocumentChatTurn(docId,turn);
+          notice.remove();
+          if(state.docId===docId&&state.viewer===viewer){if(current()){history=merged;renderChat(false);const saved=h('small',{class:'ml-muted'},'已保存到本机');qs('#chat-log').append(saved);}else if(!job)history=merged;}
+        }catch{
+          notice.textContent='回答已生成，但本地保存失败。刷新前请重试保存或复制回答。';
+          const retrySave=h('button',{class:'ghost'},'重试保存');
+          retrySave.onclick=()=>{retrySave.remove();notice.textContent='正在保存对话…';void save();};notice.append(retrySave);
+        }
+      };
+      await save();
     }else if(state.settings.cache.enabled)await idbPut('chats',{key:keyFor(action,index),docId,messages:[{role:'assistant',content:result.text,at:Date.now()}],sources:context.sources,sourceRevision:revision,updatedAt:Date.now()} as StoredAnswer);
     if(current()&&result.storageWarning)reply.append(h('small',{class:'ml-muted'},result.storageWarning));
   }catch(error){stream.stop();if(current()){

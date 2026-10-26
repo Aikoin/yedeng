@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "页灯 YEDENG",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "用自己的 AI 服务精读论文：自动概览、划句解释、图表与公式讲解，阅读笔记留在本机。",
   "minimum_chrome_version": "114",
   "icons": {
@@ -40,5 +40,5 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-  "version_name": "0.2.7"
+  "version_name": "0.2.8"
 }
