@@ -431,3 +431,26 @@
   :is(#formula-workspace,#request-workspace) > .yd-object-composer { margin-bottom:9px; }
   .yd-pin-tray { max-height:78px; }
 }
+
+/* Shared answer typography: overview, conversation, selections and formula explanations. */
+.yd-markdown-quote {
+  box-sizing:border-box; margin:12px 0; padding:8px 14px;
+  border-left:3px solid var(--ml-accent); border-radius:0 6px 6px 0;
+  background:var(--ml-accent-weak); color:var(--ml-text);
+  min-width:0; overflow-wrap:anywhere;
+}
+.yd-markdown-quote > :first-child { margin-top:0; }
+.yd-markdown-quote > :last-child { margin-bottom:0; }
+.yd-markdown-heading { margin:16px 0 6px; line-height:1.5; overflow-wrap:anywhere; }
+.yd-markdown-list { margin:8px 0; padding-left:1.6em; }
+.yd-markdown-list > li { margin:5px 0; overflow-wrap:anywhere; }
+.yd-markdown-list > li > p { margin:4px 0; }
+.yd-markdown-list input[type=checkbox] { float:left; margin:7px 6px 0 -20px; accent-color:var(--ml-accent); }
+.yd-markdown-code { box-sizing:border-box; max-width:100%; overflow-x:auto; padding:12px; border:1px solid var(--ml-border); border-radius:6px; white-space:pre; font-size:12px; line-height:1.65; }
+.yd-markdown-code code { white-space:pre; overflow-wrap:normal; word-break:normal; }
+.yd-markdown-rule { border:0; border-top:1px solid var(--ml-border); margin:18px 0; }
+.yd-answer-math { max-width:100%; overflow-x:auto; }
+
+.yd-markdown-heading { font-size:14px; font-weight:650; }
+h3.yd-markdown-heading { font-size:16px; }
+.yd-markdown-task { list-style:none; }

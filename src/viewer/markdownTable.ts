@@ -12,6 +12,7 @@ export function splitTableRow(raw: string): string[] | null {
       else cell += char;
       continue;
     }
+    if (!ticks && char === '$' && line.indexOf('$', i + 1) > i + 1) { cell += char; mathEnd = '$'; continue; }
     if (!ticks && char === '\\' && next === '(' && line.indexOf('\\)', i + 2) >= 0) {
       cell += '\\('; i++; mathEnd = '\\)'; continue;
     }
@@ -41,7 +42,7 @@ export function parseMarkdownTable(lines: readonly string[], start: number): Mar
   const alignments = delimiter.map((cell): TableAlignment => cell.endsWith(':') ? cell.startsWith(':') ? 'center' : 'right' : 'left');
   const rows: string[][] = []; let end = start + 2;
   while (end < lines.length) {
-    if (/^\s*(?:#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s)/.test(lines[end])) break;
+    if (/^\s*(?:>|#{1,6}\s|```|~~~|[-*+]\s|\d+[.)]\s)/.test(lines[end])) break;
     const cells = splitTableRow(lines[end]); if (!cells) break;
     rows.push(headers.map((_, i) => cells[i] ?? '')); end++;
   }

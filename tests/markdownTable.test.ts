@@ -74,7 +74,7 @@ describe('safe Markdown comparison tables',()=>{
   it('keeps surrounding paragraphs, consecutive tables and a following heading separate',()=>{
     const root=render('Before.\n\nA|B\n---|---\nx|y\n\nC|D\n---|---\nz|w\n### After | heading\nAfter.');
     expect(nodes(root).filter(n=>n.nodeName==='table')).toHaveLength(2);
-    expect(root.children.map(n=>n.nodeName)).toEqual(['p','div','div','h4','p']);
+    expect(root.children.map(n=>n.nodeName)).toEqual(['p','div','div','h5','p']);
     expect(root.textContent).toContain('After | heading');
   });
 });
