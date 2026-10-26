@@ -116,16 +116,28 @@ function labelledSources(value: Draft): readonly EvidenceAttachment[] {
     text:value.snapshot.text,sourceQuads:structuredClone(value.snapshot.pdfRegions ?? []) };
   const materials: EvidenceAttachment[] = value.sourceKind==='image' ? [] : [primary];
   if (value.includeContext && value.context.trim()) materials.push({ id:`${value.sourceId}:context`,docId:value.docId,kind:'text',
-    label:value.context===value.originalContext?'本地压缩上下文':'用户编辑的上下文（不自动定位）',
+    label:value.context===value.originalContext?'相邻段落':'补充说明',
     pageIndices:[...new Set(value.contextQuads.map(region=>region.pageIndex))],text:value.context,
     sourceQuads:value.context===value.originalContext?structuredClone(value.contextQuads):[] });
   materials.push(...value.evidence);
   return labelRequestEvidence(value.docId,materials);
 }
-function sourceButton(item:EvidenceAttachment,label=item.label):HTMLButtonElement {
-  const button=h('button',{disabled:!item.sourceQuads?.some(region=>region.quads.length)},`${label} · 返回来源`);
-  button.onclick=()=>{if(!current())return;void returnToEvidenceSource(item).catch(error=>status(error instanceof Error?error.message:'无法定位来源',true));};
+function sourceButton(item:EvidenceAttachment,label='定位选中文字'):HTMLButtonElement {
+  const button=h('button',{disabled:!item.sourceQuads?.some(region=>region.quads.length)},label);
+  button.onclick=()=>{if(!current())return;void returnToEvidenceSource(item).then(()=>{
+    if(!button.isConnected)return;
+    const back=h('button',{},'返回跳转前');
+    back.onclick=()=>void backToReading().then(()=>back.remove()).catch(error=>status(String(error),true));
+    button.parentElement?.querySelector('[data-reading-back]')?.remove();
+    back.dataset.readingBack='true';button.after(back);
+  }).catch(error=>status(error instanceof Error?error.message:'无法定位来源',true));};
   return button;
+}
+function renderSourceNavigation(sources:readonly EvidenceAttachment[]):void {
+  if(!sourceButtons)return;
+  sourceButtons.replaceChildren();
+  const primary=sources.find(source=>!source.id.endsWith(':context')&&source.sourceQuads?.some(region=>region.quads.length));
+  if(primary)sourceButtons.append(sourceButton(primary,draft?.sourceKind==='image'?'定位原图':'定位选中文字'));
 }
 function messagesFor(value: Draft) {
   if(value.action==='translate')return [{role:'system' as const,content:value.system},translationMessages(value.snapshot.text,value.targetLanguage,value.originalContext)[1]];
@@ -203,7 +215,7 @@ async function send(force:boolean):Promise<void>{
   if(savedButton)savedButton.disabled=true;if(sendButton)sendButton.disabled=true;if(abortButton){abortButton.disabled=false;abortButton.hidden=false;}if(result){result.textContent='';result.dataset.stale='false';result.dataset.rendered='false';}if(sourceButtons)sourceButtons.replaceChildren();if(regenerateButton)regenerateButton.disabled=true;
   const translationCopy=host?.querySelector<HTMLButtonElement>('[data-translation-copy]');if(translationCopy)translationCopy.disabled=true;
   const runVersion=version, sentSources=labelledSources(value);
-  if(sourceButtons)sourceButtons.replaceChildren(...sentSources.map(item=>sourceButton(item)));
+  renderSourceNavigation(sentSources);
   const stream=createStreamingAnswer(text=>{if(result&&current(value)&&runVersion===version)result.replaceChildren(renderMarkdown(streamingPreview(text)));});
   try{
     const answer=await dispatcher.send(target,authorizeExplicitSend(target.request),{force,retryInterrupted:true,signal:controller.signal,
@@ -213,7 +225,7 @@ async function send(force:boolean):Promise<void>{
     if(!current(value)||runVersion!==version)return;
     if(result){result.replaceChildren(renderMarkdown(answer.text,value.action==='translate'?{}:{evidenceSources:sentSources.map((source,i)=>({id:`E${i+1}`,pageIndices:source.pageIndices,label:source.label})),onEvidenceCite:id=>{const source=sentSources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>status(String(error),true));}}));result.dataset.rendered='true';}value.turns??=[];value.turns.push({question:value.question||value.snapshot.text.slice(0,1000),answer:answer.text,sources:sentSources.map(source=>({...source,image:undefined}))});if(value.turns.length>12)value.turns.shift();if(regenerateButton){regenerateButton.disabled=false;regenerateButton.hidden=false;}
     const copy=host?.querySelector<HTMLButtonElement>('[data-translation-copy]');if(copy)copy.disabled=false;
-    if(sourceButtons){sourceButtons.replaceChildren(...sentSources.map(item=>sourceButton(item)));const back=h('button',{},'返回上一阅读位置');back.onclick=()=>void Promise.resolve().then(()=>backToReading()).catch((error:unknown)=>status(String(error),true));sourceButtons.append(back);}
+    renderSourceNavigation(sentSources);
     const known=new Set(sentSources.map((_,index)=>`E${index+1}`));const unknown=[...answer.text.matchAll(/\[(E\d+)\]/g)].map(match=>match[1]).filter(id=>!known.has(id));
     status(answer.storageWarning??(answer.fromCache?'本地已保存':'已完成'),!!answer.storageWarning);if(value.action!=='translate'&&unknown.length)status(`回答包含未提供的引用 ${[...new Set(unknown)].join('、')}；没有为这些编号生成跳转。`,true);
   }catch(error){stream.stop();if(current(value)&&runVersion===version){if(regenerateButton){regenerateButton.disabled=false;regenerateButton.hidden=false;}status(`${error instanceof Error?error.message:'发送失败'}。${value.action==='translate'?'可点击重新翻译。':'材料与部分结果保留；不会自动重试。'}`,true);}}
@@ -229,8 +241,8 @@ async function showDocumentHistory():Promise<void>{
   for(const record of records){
    const card=h('article',{class:'yd-material'},h('strong',{},`${record.action} · ${new Date(record.updatedAt).toLocaleString()}`),h('pre',{class:'yd-response'},record.resultText));
    if(record.sourceRevision)card.append(h('p',{},`来源修订：${record.sourceRevision}；旧解释不代表当前校订版本。`));
-   for(const reference of record.sources??[]){const evidence:EvidenceAttachment={...reference,docId,kind:'text'};const button=h('button',{disabled:!reference.sourceQuads?.some(region=>region.quads.length)},`${reference.label} · 返回来源`);button.onclick=()=>{if(state.docId===docId&&state.viewer===viewer)void returnToEvidenceSource(evidence).catch((error:unknown)=>{button.textContent=String(error);});};card.append(button);}
-   const previous=h('button',{},'返回上一阅读位置');previous.onclick=()=>void Promise.resolve().then(()=>backToReading()).catch(()=>{});card.append(previous);body.append(card);
+   for(const reference of record.sources??[]){const evidence:EvidenceAttachment={...reference,docId,kind:'text'};const button=h('button',{disabled:!reference.sourceQuads?.some(region=>region.quads.length)},`${reference.id.endsWith(':context')||reference.label.includes('压缩上下文')?'查看相邻段落':'定位原文'} · 第 ${reference.pageIndices.map(page=>page+1).join('、')} 页`);button.onclick=()=>{if(state.docId===docId&&state.viewer===viewer)void returnToEvidenceSource(evidence).catch((error:unknown)=>{button.textContent=String(error);});};card.append(button);}
+   body.append(card);
   }
   host.hidden=false;host.replaceChildren(h('div',{class:'yd-workspace-head'},h('h2',{},'已保存的解释'),h('button',{'aria-label':'关闭请求准备',on:{click:resetRequestWorkspace}},'×')),body);
  }catch(error){if(state.docId===docId&&state.viewer===viewer&&!draft)host.replaceChildren(h('p',{class:'yd-status'},error instanceof Error?error.message:'本地结果读取失败；未发送请求'));}
