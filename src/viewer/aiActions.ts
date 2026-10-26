@@ -19,7 +19,7 @@ import { parseOverview } from '../ai/overview';
 const dispatcher = productionDispatcher(() => ({ docId: state.docId, sessionGeneration: requestSessionGeneration() }));
 interface StoredAnswer extends ChatRecord { sources?: DocumentSource[]; sourceRevision?: string }
 let epoch = 0, registered = false;
-let job: { docId: string; viewer: object; epoch: number; controller: AbortController; output?: HTMLElement } | null = null;
+let job: { action: DocumentAction; docId: string; viewer: object; epoch: number; controller: AbortController; output?: HTMLElement } | null = null;
 let history: { role: 'user' | 'assistant'; content: string; at: number; sources?: DocumentSource[]; coverage?: string }[] = [];
 const featureFor = (action: DocumentAction): FeatureKey => action === 'overview' ? 'summary' : action === 'sectionBatch' ? 'sectionSummary' : action;
 const keyFor = (action: DocumentAction, index?: number) => `${state.docId}:g4-${action === 'sectionSummary' ? `section:${index}` : action}`;
@@ -27,6 +27,7 @@ const keyFor = (action: DocumentAction, index?: number) => `${state.docId}:g4-${
 export function resetAiPanels(): void {
   document.querySelector('.yd-source-peek')?.remove();
   epoch++; job?.controller.abort(); job = null; history = []; dispatcher.invalidate('已切换论文');
+  setChatBusy(false);
   for (const id of ['summary-body','keywords-body','section-list','chat-log']) document.getElementById(id)?.replaceChildren();
 }
 export function initAiPanels(): void {
@@ -131,23 +132,33 @@ function renderChat():void {
   for(const message of history){const bubble=h('article',{class:`ml-bubble ml-bubble--${message.role==='user'?'user':'ai'}`});if(message.role==='user')bubble.textContent=message.content;else showAnswer(bubble,message.content,message.sources??[],message.coverage);log.append(bubble);}
   log.scrollTop=log.scrollHeight;
 }
-function setChatBusy(value:boolean):void {qs<HTMLButtonElement>('#btn-chat-send').disabled=value;qs('#btn-chat-send').hidden=value;qs('#btn-chat-stop').classList.toggle('ml-hidden',!value);}
+function setChatBusy(value:boolean):void {
+  const send=document.querySelector<HTMLButtonElement>('#btn-chat-send');
+  if(send){send.disabled=value;send.hidden=value;}
+  document.querySelector('#btn-chat-stop')?.classList.toggle('ml-hidden',!value);
+}
 async function run(action:DocumentAction,section?:Section,index?:number,force=false):Promise<void>{
-  if(job&&action==='chat'){epoch++;job.controller.abort();if(job.output)job.output.textContent='概览已暂停，可稍后重新生成。';job=null;}
+  if(job&&action==='chat'&&job.action!=='chat'){epoch++;job.controller.abort();if(job.output)job.output.textContent='概览已暂停，可稍后重新生成。';job=null;}
   if(job){toast('正在处理当前任务，可以先取消','info');return;}
   const docId=state.docId,viewer=state.viewer,doc=state.docText;if(!docId||!viewer||!doc){toast('请先打开论文','info');return;}
   if(!isConfigured(state.settings)){void chrome.tabs.create({url:chrome.runtime.getURL('welcome/index.html')+'?returnTo='+encodeURIComponent(location.href)});return;}
   const question=action==='chat'?qs<HTMLTextAreaElement>('#chat-input').value.trim():'';if(action==='chat'&&!question)return;
-  const owned:{docId:string;viewer:object;epoch:number;controller:AbortController;output?:HTMLElement}={docId,viewer,epoch,controller:new AbortController()};job=owned;const current=()=>job===owned&&state.docId===docId&&state.viewer===viewer&&epoch===owned.epoch;
-  const output=action==='overview'?qs('#summary-body'):action==='keywords'?qs('#keywords-body'):action==='sectionSummary'?qs(`#document-section-${index}`):qs('#chat-log');
-  let reply:HTMLElement=output;
-  if(action==='chat'){qs('#chat-log .yd-chat-empty')?.remove();qs('#chat-log').append(h('article',{class:'ml-bubble ml-bubble--user'},question));reply=h('article',{class:'ml-bubble ml-bubble--ai'},'正在阅读相关段落…');output.append(reply);setChatBusy(true);}
-  else output.textContent='正在阅读与整理…';
-  owned.output=reply;
-  const progress=h('div',{class:'yd-inline-progress'},h('span',{class:'ml-spinner'}),h('span',{},'生成中'),h('button',{class:'ghost'},'取消'));
-  progress.querySelector('button')!.onclick=()=>owned.controller.abort();if(action!=='chat')output.before(progress);
+  const owned={action,docId,viewer,epoch,controller:new AbortController(),output:undefined as HTMLElement|undefined};job=owned;const current=()=>job===owned&&state.docId===docId&&state.viewer===viewer&&epoch===owned.epoch;
+  let reply:HTMLElement|undefined;
+  let progress:HTMLElement|undefined;
   let context:DocumentContext|undefined;
   try{
+    const output=action==='overview'?qs<HTMLElement>('#summary-body'):action==='keywords'?qs<HTMLElement>('#keywords-body'):action==='sectionSummary'?qs<HTMLElement>(`#document-section-${index}`):qs<HTMLElement>('#chat-log');
+    reply=output;
+    if(action==='chat'){
+      // The empty-state card is absent after the first turn; its absence is normal.
+      output.querySelector('.yd-chat-empty')?.remove();
+      output.append(h('article',{class:'ml-bubble ml-bubble--user'},question));
+      reply=h('article',{class:'ml-bubble ml-bubble--ai'},'正在阅读相关段落…');output.append(reply);setChatBusy(true);
+    }else output.textContent='正在阅读与整理…';
+    owned.output=reply;
+    progress=h('div',{class:'yd-inline-progress'},h('span',{class:'ml-spinner'}),h('span',{},'生成中'),h('button',{class:'ghost'},'取消'));
+    progress.querySelector('button')!.onclick=()=>owned.controller.abort();if(action!=='chat')output.before(progress);
     if(!await ensureReaderAiAccess(docId))throw new Error('本篇已关闭 AI，请在阅读设置中开启');if(!current())return;
     const hits=action==='chat'&&state.index?retrievePaperChat(state.index,question,history):[];
     context=prepareDocumentContext({action,question,title:state.info.title,doc,totalPages:state.info.numPages,section,hits,history,custom:[state.settings.prompts[featureFor(action)],state.settings.prompts.custom].filter(Boolean).join('\n')});
@@ -159,7 +170,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     let prepared=await dispatcher.prepare(scope,context.messages,parameters);
     if(action!=='chat'&&supportsThinkingToggle(prepared.request.endpoint,prepared.request.model))prepared=await dispatcher.prepare(scope,context.messages,{...parameters,thinking:'disabled'});
     if(!current())return;
-    let text='';const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,signal:owned.controller.signal,onDelta:delta=>{if(!current())return;text+=delta;if(action!=='overview')reply.textContent=text;}});
+    let text='';const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,signal:owned.controller.signal,onDelta:delta=>{if(!current())return;text+=delta;if(action!=='overview'&&reply)reply.textContent=text;}});
     if(!current())return;
     if(action==='overview')showOverview(result.text,context.sources);else showAnswer(reply,result.text,context.sources,context.coverage);
     if(action==='chat'){
@@ -169,9 +180,11 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     }else if(state.settings.cache.enabled)await idbPut('chats',{key:keyFor(action,index),docId,messages:[{role:'assistant',content:result.text,at:Date.now()}],sources:context.sources,sourceRevision:revision,updatedAt:Date.now()} as StoredAnswer);
     if(current()&&result.storageWarning)reply.append(h('small',{class:'ml-muted'},result.storageWarning));
   }catch(error){if(current()){
-    reply.replaceChildren(h('p',{class:'yd-status'},owned.controller.signal.aborted?'已取消，未自动重试。':error instanceof Error?error.message:String(error)));
-    const retry=h('button',{class:'ghost'},'重试');retry.onclick=()=>void run(action,section,index,true);reply.append(retry);
-  }}finally{progress.remove();if(job===owned){job=null;setChatBusy(false);}}
+    const message=owned.controller.signal.aborted?'已取消，未自动重试。':error instanceof Error?error.message:String(error);
+    if(reply){reply.replaceChildren(h('p',{class:'yd-status'},message));
+      const retry=h('button',{class:'ghost'},'重试');retry.onclick=()=>void run(action,section,index,true);reply.append(retry);
+    }else toast(message,'error');
+  }}finally{progress?.remove();if(job===owned){job=null;setChatBusy(false);}}
 }
 async function clearChat():Promise<void>{
   if(job){toast('先取消当前回答','info');return;}if(!state.docId)return;
