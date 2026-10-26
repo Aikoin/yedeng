@@ -9,6 +9,7 @@ import { toast } from '../shared/toast';
 import { persistDocumentChatTurn } from '../shared/documentChat';
 import type { Section } from '../pdf/extract';
 import { sha256Hex } from '../shared/hash';
+import { createStreamingAnswer, streamingPreview } from './streamingAnswer';
 import { renderMarkdown } from './markdown';
 import { jumpToPage, rebuildIndex, state } from './state';
 import { retrievePaperChat } from '../ai/paperChatContext';
@@ -82,6 +83,12 @@ function sourceDetails(sources:DocumentSource[],coverage?:string):HTMLElement {
   for(const s of sources){const b=h('button',{class:'ghost'},`原文 · 第 ${s.pageIndices.map(p=>p+1).join('、')} 页`);b.onclick=()=>void openDocumentSource(s);details.append(b);}
   return details;
 }
+function showStreamingAnswer(output:HTMLElement,text:string,sources:DocumentSource[]):void {
+  // Keep source controls functional while streaming, without appending a source list each tick.
+  const valid=sources.map(s=>({...s,pageIndices:s.pageIndices.filter(p=>Number.isSafeInteger(p)&&p>=0&&p<state.info.numPages)})).filter(s=>s.pageIndices.length);
+  const pages=[...new Set(valid.flatMap(s=>s.pageIndices))];
+  output.replaceChildren(renderMarkdown(text,{validPageIndices:pages,evidenceSources:valid,onEvidenceCite:id=>{const source=valid.find(s=>s.id===id);if(source)void openDocumentSource(source);},onCite:page=>{if(pages.includes(page))jumpToPage(page);}}));
+}
 function showAnswer(output:HTMLElement,text:string,sources:DocumentSource[],coverage?:string):void {
   sources=sources.map(source=>({...source,pageIndices:source.pageIndices.filter(page=>Number.isSafeInteger(page)&&page>=0&&page<state.info.numPages)})).filter(source=>source.pageIndices.length>0);
   const pages=[...new Set(sources.flatMap(s=>s.pageIndices))];
@@ -125,13 +132,14 @@ export function onTextExtracted():void {
     history=saved?.messages.filter(m=>!m.error).map(m=>({...m,role:m.role as 'user'|'assistant'}))??[];renderChat();
   })().catch(error=>{if(state.docId===docId)qs('#summary-body').textContent=String(error);});
 }
-function renderChat():void {
+function renderChat(scrollToLatest=true):void {
+  const previousScroll=document.getElementById('chat-log')?.scrollTop??0;
   const log=qs('#chat-log');log.replaceChildren();
   if(!history.length){const empty=h('div',{class:'yd-chat-empty'},h('span',{class:'yd-chat-orbit'},'✧'),h('h3',{},'从一个问题开始'),h('p',{},'结合这篇论文，聊聊你想弄懂的地方。'));
     for(const text of ['这篇论文最重要的发现是什么？','方法有哪些局限？']){const b=h('button',{class:'yd-suggestion'},text);b.onclick=()=>{qs<HTMLTextAreaElement>('#chat-input').value=text;qs('#chat-input').focus();};empty.append(b);}log.append(empty);
   }
   for(const message of history){const bubble=h('article',{class:`ml-bubble ml-bubble--${message.role==='user'?'user':'ai'}`});if(message.role==='user')bubble.textContent=message.content;else showAnswer(bubble,message.content,message.sources??[],message.coverage);log.append(bubble);}
-  log.scrollTop=log.scrollHeight;
+  log.scrollTop=scrollToLatest?log.scrollHeight:previousScroll;
 }
 function setChatBusy(value:boolean):void {
   const send=document.querySelector<HTMLButtonElement>('#btn-chat-send');
@@ -150,6 +158,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
   let progress:HTMLElement|undefined;
   let context:DocumentContext|undefined;
   let streamedText='';
+  const stream=createStreamingAnswer(text=>{if(current()&&reply&&context)showStreamingAnswer(reply,streamingPreview(text),context.sources);});
   try{
     const output=action==='overview'?qs<HTMLElement>('#summary-body'):action==='keywords'?qs<HTMLElement>('#keywords-body'):action==='sectionSummary'?qs<HTMLElement>(`#document-section-${index}`):qs<HTMLElement>('#chat-log');
     reply=output;
@@ -163,6 +172,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
         qs<HTMLTextAreaElement>('#chat-input').value='';
       }
       setChatBusy(true);
+      output.scrollTop=output.scrollHeight;
     }else output.textContent='正在阅读与整理…';
     owned.output=reply;
     progress=h('div',{class:'yd-inline-progress'},h('span',{class:'ml-spinner'}),h('span',{},'生成中'),h('button',{class:'ghost'},'取消'));
@@ -178,15 +188,16 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     let prepared=await dispatcher.prepare(scope,context.messages,parameters);
     if(action!=='chat'&&supportsThinkingToggle(prepared.request.endpoint,prepared.request.model))prepared=await dispatcher.prepare(scope,context.messages,{...parameters,thinking:'disabled'});
     if(!current())return;
-    const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,retryInterrupted:action==='chat',signal:owned.controller.signal,onDelta:delta=>{if(!current())return;streamedText+=delta;if(action!=='overview'&&reply)reply.textContent=streamedText;}});
+    const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,retryInterrupted:action==='chat',signal:owned.controller.signal,onDelta:delta=>{if(!current())return;streamedText+=delta;if(action!=='overview')stream.push(delta);}});
     if(!current())return;
+    stream.stop();
     if(action==='overview')showOverview(result.text,context.sources);else showAnswer(reply,result.text,context.sources,context.coverage);
     if(action==='chat'){
       const at=Date.now();history.push({role:'user',content:question,at},{role:'assistant',content:result.text,at,sources:context.sources,coverage:context.coverage});
-      if(state.settings.cache.enabled){const merged=await persistDocumentChatTurn(docId,{id:prepared.request.id,question,answer:result.text,at,sources:context.sources,coverage:context.coverage});if(current()){history=merged;renderChat();}}
+      if(state.settings.cache.enabled){const merged=await persistDocumentChatTurn(docId,{id:prepared.request.id,question,answer:result.text,at,sources:context.sources,coverage:context.coverage});if(current()){history=merged;renderChat(false);}}
     }else if(state.settings.cache.enabled)await idbPut('chats',{key:keyFor(action,index),docId,messages:[{role:'assistant',content:result.text,at:Date.now()}],sources:context.sources,sourceRevision:revision,updatedAt:Date.now()} as StoredAnswer);
     if(current()&&result.storageWarning)reply.append(h('small',{class:'ml-muted'},result.storageWarning));
-  }catch(error){if(current()){
+  }catch(error){stream.stop();if(current()){
     const message=owned.controller.signal.aborted?'已取消，未自动重试。':error instanceof Error?error.message:String(error);
     if(reply){
       const partial=error instanceof AiOutputLimitError?error.partialText:streamedText;
@@ -202,7 +213,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
       const retry=h('button',{class:'ghost'},higher?`提高至 ${higher} tokens 重试`:'重试');
       retry.onclick=()=>void run(action,section,index,true,action==='chat'?{question,reply:reply!,docId,viewer,...(higher?{maxTokens:higher}:retryTarget?.maxTokens?{maxTokens:retryTarget.maxTokens}:{})}:undefined);reply.append(retry);
     }else toast(message,'error');
-  }}finally{progress?.remove();if(job===owned){job=null;setChatBusy(false);}}
+  }}finally{stream.stop();progress?.remove();if(job===owned){job=null;setChatBusy(false);}}
 }
 async function clearChat():Promise<void>{
   if(job){toast('先取消当前回答','info');return;}if(!state.docId)return;

@@ -92,6 +92,14 @@ describe('paper chat repeated send lifecycle',()=>{
   it('retains received stream text after a network error rather than replacing it with the error',async()=>{
     mocks.send.mockImplementationOnce(async(_p,_a,options)=>{options.onDelta('Useful partial answer');throw new Error('connection lost');});click('question');await settle();expect(elements['chat-log'].textContent).toContain('Useful partial answer');expect(elements['chat-log'].textContent).toContain('connection lost');expect(mocks.persist).not.toHaveBeenCalled();
   });
+  it('scrolls once on send but preserves user position through streaming and completion',async()=>{
+    const log=elements['chat-log'];log.scrollHeight=900;log.scrollTop=12;
+    let finish!:(value:any)=>void;let delta!:(text:string)=>void;
+    mocks.send.mockImplementationOnce(async(_p,_a,options)=>{delta=options.onDelta;return new Promise(r=>{finish=r;});});
+    click('question');expect(log.scrollTop).toBe(900);await vi.waitFor(()=>expect(mocks.send).toHaveBeenCalledTimes(1));
+    log.scrollTop=42;delta('**Live answer**');await vi.waitFor(()=>expect(log.textContent).toContain('Live answer'));expect(log.scrollTop).toBe(42);
+    finish({text:'Final answer'});await settle();expect(log.scrollTop).toBe(42);expect(log.textContent).toContain('Final answer');
+  });
   it('recovers from network failure and keeps the failed question in its message bubble',async()=>{
     mocks.send.mockRejectedValueOnce(new Error('network unavailable'));enter('question');await settle();
     expect(input().value).toBe('');expect(elements['chat-log'].textContent).toContain('question');expect(elements['chat-log'].textContent).toContain('network unavailable');

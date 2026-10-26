@@ -454,3 +454,6 @@
 .yd-markdown-heading { font-size:14px; font-weight:650; }
 h3.yd-markdown-heading { font-size:16px; }
 .yd-markdown-task { list-style:none; }
+
+/* Explicit send moves the log once; streaming must not drag the reading position. */
+#chat-log { overflow-anchor:none; }
