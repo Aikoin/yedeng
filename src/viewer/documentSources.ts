@@ -13,7 +13,7 @@ export async function openDocumentSource(source:DocumentSource):Promise<void>{
   const close=h('button',{class:'ghost','aria-label':'关闭原文证据'},'×');
   const title=h('strong',{},`原文证据 · PDF 第 ${pages.map(page=>page+1).join('、')} 页`);
   const status=h('small',{class:'ml-muted',role:'status'},'正在定位原文…');
-  const panel=h('section',{class:'yd-source-peek',role:'dialog','aria-label':'原文证据'},h('div',{class:'yd-source-peek-head'},title,close),h('p',{class:'ml-muted'},source.truncated?'这是生成时实际使用的抽取材料，中间省略处有标记。':'这是这条引用在生成时实际使用的原文材料。'),h('pre',{},source.text),status);
+  const panel=h('section',{class:'yd-source-peek',role:'dialog','aria-label':'原文证据'},h('div',{class:'yd-source-peek-head'},title,close),h('p',{class:'ml-muted'},source.truncated?'这是生成时实际使用的文字节选，未包含该页全部内容。':'这是这条引用在生成时实际使用的原文材料。'),h('pre',{},source.text),status);
   const closePanel=()=>{panel.remove();document.removeEventListener('keydown',escape);};const escape=(event:KeyboardEvent)=>{if(event.key==='Escape')closePanel();};close.onclick=closePanel;document.addEventListener('keydown',escape);
   const jump=async(page:number)=>{
     if(state.viewer!==viewer||state.docId!==docId){closePanel();return;}

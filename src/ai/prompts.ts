@@ -1,10 +1,11 @@
 /**
  * 提示词集中管理。PROMPT_VERSION 参与缓存键：改了提示词，旧缓存自动失效。
- * 所有提示词都强调"不得编造"—— 这是对抗幻觉的主要手段。
+ * 摘要忠于论文；阅读解释允许通用背景，但不得冒充本文证据或联网结果。
  */
 import type { ChatMessage } from './types';
+import { READING_GUIDANCE } from './readingGuidance';
 
-export const PROMPT_VERSION = 'v1.0.0';
+export const PROMPT_VERSION = 'v2.1.0';
 
 const GUARDRAIL =
   '硬性要求：只依据我提供的论文内容作答，不得编造论文中不存在的数字、结论、方法名或引用；' +
@@ -86,7 +87,7 @@ export function explainMessages(text: string, ctx: PaperContext, custom?: string
       '**一句话**：用最直白的中文概括这段在说什么。\n' +
       '**要点**：3-5 条要点，逐条解释关键概念、变量含义、以及"为什么这么做"。\n' +
       '**术语**：涉及的专业术语给出简明解释（没有可省略）。\n' +
-      `公式用 $...$ 包裹。区分"作者声称"与"已被广泛接受的事实"。\n${GUARDRAIL}`,
+      `公式用 $...$ 包裹。区分"作者声称"与"已被广泛接受的事实"。\n${READING_GUIDANCE}`,
     custom
   );
   const user = `${contextBlock(ctx)}\n\n需要解释的原文：\n"""\n${text}\n"""`;
@@ -158,12 +159,12 @@ export function chatSystemMessages(
     .map((c) => `【第 ${c.pageIndex + 1} 页｜${c.sectionTitle || '未命名章节'}】\n${c.text}`)
     .join('\n\n');
   const system = withCustom(
-    '你是这篇论文的专属助教，只能基于下面提供的论文片段回答。\n' +
+    READING_GUIDANCE+'\n' +
       '回答要求：\n' +
       '1) 先给结论，再给依据；\n' +
       '2) 引用依据时用 [p.页码] 标注，例如 [p.3]，有章节名时写成 [p.3 §Method]；\n' +
       '3) 使用中文回答，保持学术准确；\n' +
-      `4) ${GUARDRAIL}`,
+      '4) 本文具体数字和结论需有原文支持；一般知识不要伪装成本文结论，不给背景知识硬贴论文引用。',
     custom
   );
   return {

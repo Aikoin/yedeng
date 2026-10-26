@@ -166,7 +166,7 @@ export function buildChunks(docText: DocText, maxLen = 1200, overlap = 150): Chu
 
   let buffer = '';
   let bufferPage = 0;
-  const flush = () => {
+  const flush = (carry = true) => {
     const text = buffer.trim();
     if (text.length < 40) {
       buffer = '';
@@ -178,10 +178,11 @@ export function buildChunks(docText: DocText, maxLen = 1200, overlap = 150): Chu
       sectionTitle: sectionOf(bufferPage),
       text,
     });
-    buffer = text.slice(Math.max(0, text.length - overlap));
+    buffer = carry ? text.slice(Math.max(0, text.length - overlap)) : '';
   };
 
   for (const page of docText.pages) {
+    bufferPage = page.pageIndex;
     for (const para of page.paragraphs) {
       const piece = para.text;
       if (piece.length > maxLen) {
@@ -201,8 +202,9 @@ export function buildChunks(docText: DocText, maxLen = 1200, overlap = 150): Chu
       if (buffer.length + piece.length > maxLen) flush();
       buffer += (buffer ? '\n' : '') + piece;
     }
+    // A source has one pageIndex. Never mix a following page into its text or overlap.
+    flush(false);
   }
-  flush();
   return chunks;
 }
 

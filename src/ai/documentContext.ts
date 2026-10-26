@@ -1,7 +1,9 @@
-/** Bounded local extraction, with source IDs fixed before inference. Never embeds or uploads a paper. */
+/** Local paper evidence, with source IDs fixed before inference and truthful coverage. */
 import type { DocText, Section } from '../pdf/extract';
 import type { Chunk } from '../pdf/bm25';
 import type { RequestMessages } from './preparedRequest';
+import { planPaperChat, prepareChatHistory } from './paperChatContext';
+import { READING_GUIDANCE } from './readingGuidance';
 export type DocumentAction = 'overview' | 'summary' | 'keywords' | 'sectionSummary' | 'sectionBatch' | 'chat';
 export interface DocumentSource { id: string; label: string; pageIndices: number[]; text: string; truncated: boolean }
 export interface DocumentContext {
@@ -16,6 +18,17 @@ export function prepareDocumentContext(input: {
   const question = (input.question ?? '').trim();
   if (question.length > 2000) throw new Error('问题超过2000字符，请缩短后重新准备；没有发送');
   if (input.action === 'chat' && !question) throw new Error('请先输入问题');
+  if (input.action === 'chat') {
+    const plan = planPaperChat(input.doc,question,input.hits);
+    const sources: DocumentSource[] = plan.entries.map((entry,index)=>({...entry,id:`E${index+1}`}));
+    const history=prepareChatHistory(input.history);
+    const strategy=!plan.extractedPages?'尚无可用正文文字，只能解释一般背景':plan.strategy==='full-text'?'已提供全部可提取文字':'已提供相关页、相邻上下文与跨章节选段';
+    const coverage=`${strategy}，涉及 ${plan.suppliedPages}/${input.totalPages} 页；全文已提取 ${plan.extractedPages}/${input.totalPages} 页文字。本轮未联网。图像、扫描页及复杂公式的语义未自动识别。${!plan.matched&&plan.strategy==='cross-section'?'字面检索未命中，已补充关键章节；这不代表论文没有相关信息。':''}`;
+    const messages:RequestMessages=[{role:'system',content:`${READING_GUIDANCE}\n本文事实只引用下列材料中实际存在的 [E编号]；E 是原文证据编号，不是公式编号。一般背景和类比不附论文证据编号。不许编造页码、数字、来源。历史回答不能充当本文证据；其中的旧证据编号可能与本轮不同，必须以本轮材料为准。${input.custom?'\n用户偏好：'+input.custom.slice(0,2000):''}`},
+      {role:'user',content:`论文：${input.title.slice(0,500)}\n本轮阅读范围：${coverage}\n\n${sources.map(s=>`[${s.id}] ${s.label} · PDF ${s.pageIndices.map(p=>p+1).join(', ')}${s.truncated?' · 文字节选':''}\n${s.text}`).join('\n\n')}`},
+      ...history,{role:'user',content:question}];
+    return {action:'chat',question,sources,messages,coverage,contextChars:sources.reduce((n,s)=>n+s.text.length,0),historyChars:history.reduce((n,m)=>n+m.content.length,0)};
+  }
   const pages = input.doc.pages.filter(p => p.text.trim());
   if (!pages.length) throw new Error('没有可检索文字。扫描页与图片中的信息不会自动识别，请从图表或公式准备区附加原图');
   let entries: { label: string; pageIndices: number[]; text: string }[];
@@ -28,14 +41,6 @@ export function prepareDocumentContext(input: {
     if (!input.section) throw new Error('请选择章节');
     entries = pages.filter(page=>page.pageIndex>=input.section!.pageIndex&&page.pageIndex<=input.section!.endPageIndex).map(page=>({label:`章节 · ${input.section!.title.slice(0,200)}`,pageIndices:[page.pageIndex],text:page.text}));
     if(!entries.length)throw new Error('本节没有可定位的文字页');
-  } else if (input.action === 'chat') {
-    const seen = new Set<string>();
-    entries = (input.hits ?? []).filter(c => {
-      const key = `${c.pageIndex}:${c.text}`;
-      if (!c.text.trim() || seen.has(key) || !pages.some(p => p.pageIndex === c.pageIndex)) return false;
-      seen.add(key); return true;
-    }).slice(0, 6).map(c => ({ label: `${input.retrievalMatched === false ? '首段兜底（未命中问题）' : '检索片段'} · ${c.sectionTitle || '正文'}`, pageIndices: [c.pageIndex], text: c.text }));
-    if (!entries.length) throw new Error('未检索到可用文字证据，请换用论文中的术语；不会回退发送整篇论文');
   } else {
     // Head/tail are explicit samples, never described as exhaustive full-text coverage.
     const middle = input.action==='overview' ? input.doc.sections.filter(s=>/method|model|experiment|result|conclu|discussion|approach|evaluation|analysis|方法|模型|实验|结果|结论/i.test(s.title)).map(s=>pages.find(p=>p.pageIndex===s.pageIndex)).filter((p):p is (typeof pages)[number]=>!!p).slice(0,6) : [];
@@ -50,9 +55,8 @@ export function prepareDocumentContext(input: {
     const clipped = truncated ? text.slice(0, Math.floor((perSource - 24) * .7)) + '\n[中间已省略]\n' + text.slice(-Math.floor((perSource - 24) * .3)) : text;
     return { ...entry, id: `E${index + 1}`, text: clipped, truncated };
   });
-  const history = (input.action === 'chat' ? input.history ?? [] : []).slice(-4)
-    .map(m => ({ role: m.role, content: m.content.slice(0, 1000) }));
-  const coverage = `${input.action === 'chat' && input.retrievalMatched === false ? '本地关键词检索未命中，以下仅为首段参考，不能确认问题答案。' : ''}文字覆盖 ${pages.length}/${input.totalPages} 页；本次 ${sources.length} 个文字证据，${sources.filter(s => s.truncated).length} 个按预算截取。未读取图片、扫描页或公式语义；最近最多4条对话各1000字符。`;
+  const history: {role:'user'|'assistant';content:string}[] = [];
+  const coverage = `文字覆盖 ${pages.length}/${input.totalPages} 页；本次 ${sources.length} 个文字证据，${sources.filter(s => s.truncated).length} 个按预算截取。未读取图片、扫描页或公式语义。`;
   const instruction = input.action === 'overview' ? '返回JSON对象，只有 summary 和 keywords 两个字段。summary为中文Markdown字符串，以“问题”“方法”“结论”三个小标题分别写1到2句，总长不超过420个汉字；keywords为最多6个简短中英术语字符串的数组。正文使用[E编号]标记来源。抽取材料不能证明全文覆盖，缺失信息明确未知。不要输出代码围栏。'
     : input.action === 'summary' ? '给出问题、方法、结论三项摘要。每项1到2句，总长不超过420个汉字。首尾抽样不能证明全文覆盖，缺失信息明确未知。'
     : input.action === 'keywords' ? '用简短列表列出最多8个关键词及中文解释，每项给出支持它的证据编号。'

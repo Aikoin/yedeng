@@ -11,7 +11,7 @@ import type { Section } from '../pdf/extract';
 import { sha256Hex } from '../shared/hash';
 import { renderMarkdown } from './markdown';
 import { jumpToPage, rebuildIndex, state } from './state';
-import { search } from '../pdf/bm25';
+import { retrievePaperChat } from '../ai/paperChatContext';
 import { requestSessionGeneration } from './requestWorkspace';
 import { openDocumentSource } from './documentSources';
 import { parseOverview } from '../ai/overview';
@@ -20,7 +20,7 @@ const dispatcher = productionDispatcher(() => ({ docId: state.docId, sessionGene
 interface StoredAnswer extends ChatRecord { sources?: DocumentSource[]; sourceRevision?: string }
 let epoch = 0, registered = false;
 let job: { docId: string; viewer: object; epoch: number; controller: AbortController; output?: HTMLElement } | null = null;
-let history: { role: 'user' | 'assistant'; content: string; at: number; sources?: DocumentSource[] }[] = [];
+let history: { role: 'user' | 'assistant'; content: string; at: number; sources?: DocumentSource[]; coverage?: string }[] = [];
 const featureFor = (action: DocumentAction): FeatureKey => action === 'overview' ? 'summary' : action === 'sectionBatch' ? 'sectionSummary' : action;
 const keyFor = (action: DocumentAction, index?: number) => `${state.docId}:g4-${action === 'sectionSummary' ? `section:${index}` : action}`;
 
@@ -74,16 +74,17 @@ export function renderModelSelect():void {
   const auto=document.querySelector<HTMLInputElement>('#auto-overview');if(auto)auto.checked=state.settings.reading?.autoOverview!==false;
 }
 function sourceDetails(sources:DocumentSource[],coverage?:string):HTMLElement {
-  const details=h('details',{class:'yd-answer-sources'},h('summary',{},'来源与范围'));
+  const mode=coverage?.includes('本轮未联网')?(!sources.length?' · 无可用正文 · 未联网':coverage.startsWith('已提供全部')?' · 全文可提取文字 · 未联网':' · 跨章节选段 · 未联网'):'';
+  const details=h('details',{class:'yd-answer-sources'},h('summary',{},'来源与范围'+mode));
   if(coverage)details.append(h('p',{class:'ml-muted'},coverage));
   for(const s of sources){const b=h('button',{class:'ghost'},`原文 · 第 ${s.pageIndices.map(p=>p+1).join('、')} 页`);b.onclick=()=>void openDocumentSource(s);details.append(b);}
   return details;
 }
-function showAnswer(output:HTMLElement,text:string,sources:DocumentSource[]):void {
+function showAnswer(output:HTMLElement,text:string,sources:DocumentSource[],coverage?:string):void {
   sources=sources.map(source=>({...source,pageIndices:source.pageIndices.filter(page=>Number.isSafeInteger(page)&&page>=0&&page<state.info.numPages)})).filter(source=>source.pageIndices.length>0);
   const pages=[...new Set(sources.flatMap(s=>s.pageIndices))];
   output.replaceChildren(renderMarkdown(text,{validPageIndices:pages,evidenceSources:sources,onEvidenceCite:id=>{const s=sources.find(s=>s.id===id);if(s)void openDocumentSource(s);},onCite:p=>{if(pages.includes(p))jumpToPage(p);}}));
-  if(sources.length)output.append(sourceDetails(sources));
+  if(sources.length||coverage)output.append(sourceDetails(sources,coverage));
 }
 function showOverview(text:string,sources:DocumentSource[]):void {
   const value=parseOverview(text);showAnswer(qs('#summary-body'),value.summary,sources);
@@ -127,7 +128,7 @@ function renderChat():void {
   if(!history.length){const empty=h('div',{class:'yd-chat-empty'},h('span',{class:'yd-chat-orbit'},'✧'),h('h3',{},'从一个问题开始'),h('p',{},'结合这篇论文，聊聊你想弄懂的地方。'));
     for(const text of ['这篇论文最重要的发现是什么？','方法有哪些局限？']){const b=h('button',{class:'yd-suggestion'},text);b.onclick=()=>{qs<HTMLTextAreaElement>('#chat-input').value=text;qs('#chat-input').focus();};empty.append(b);}log.append(empty);
   }
-  for(const message of history){const bubble=h('article',{class:`ml-bubble ml-bubble--${message.role==='user'?'user':'ai'}`});if(message.role==='user')bubble.textContent=message.content;else showAnswer(bubble,message.content,message.sources??[]);log.append(bubble);}
+  for(const message of history){const bubble=h('article',{class:`ml-bubble ml-bubble--${message.role==='user'?'user':'ai'}`});if(message.role==='user')bubble.textContent=message.content;else showAnswer(bubble,message.content,message.sources??[],message.coverage);log.append(bubble);}
   log.scrollTop=log.scrollHeight;
 }
 function setChatBusy(value:boolean):void {qs<HTMLButtonElement>('#btn-chat-send').disabled=value;qs('#btn-chat-send').hidden=value;qs('#btn-chat-stop').classList.toggle('ml-hidden',!value);}
@@ -148,20 +149,23 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
   let context:DocumentContext|undefined;
   try{
     if(!await ensureReaderAiAccess(docId))throw new Error('本篇已关闭 AI，请在阅读设置中开启');if(!current())return;
-    const hits=action==='chat'&&state.index?search(state.index,question+' '+(history.filter(m=>m.role==='user').at(-1)?.content.slice(0,300)??''),6).filter(hit=>hit.score>0).map(hit=>hit.chunk):[];
-    context=prepareDocumentContext({action,question,title:state.info.title,doc,totalPages:state.info.numPages,section,hits:hits.length?hits:state.chunks.slice(0,2),retrievalMatched:hits.length>0,history,custom:[state.settings.prompts[featureFor(action)],state.settings.prompts.custom].filter(Boolean).join('\n')});
+    const hits=action==='chat'&&state.index?retrievePaperChat(state.index,question,history):[];
+    context=prepareDocumentContext({action,question,title:state.info.title,doc,totalPages:state.info.numPages,section,hits,history,custom:[state.settings.prompts[featureFor(action)],state.settings.prompts.custom].filter(Boolean).join('\n')});
+    if(action==='chat')reply.textContent=context.coverage.startsWith('已提供全部')?'正在通读可提取的论文文字并组织回答…':'正在结合相关上下文与关键章节回答…';
     const revision=await sha256Hex(new TextEncoder().encode(JSON.stringify(context.messages)).buffer);
     const scope={type:'document_action' as const,action:`document_${action}`,feature:featureFor(action),docId,sessionGeneration:requestSessionGeneration(),sourceRevision:revision,resultSources:context.sources};
-    let prepared=await dispatcher.prepare(scope,context.messages,{maxTokens:action==='overview'?1200:1600,temperature:.2});
-    if(supportsThinkingToggle(prepared.request.endpoint,prepared.request.model))prepared=await dispatcher.prepare(scope,context.messages,{maxTokens:action==='overview'?1200:1600,temperature:.2,thinking:'disabled'});
+    // Chat follows the provider's configured output budget and thinking defaults, instead of forcing 1600 tokens / thinking off.
+    const parameters={temperature:.2,...(action==='chat'?{}:{maxTokens:action==='overview'?1200:1600})};
+    let prepared=await dispatcher.prepare(scope,context.messages,parameters);
+    if(action!=='chat'&&supportsThinkingToggle(prepared.request.endpoint,prepared.request.model))prepared=await dispatcher.prepare(scope,context.messages,{...parameters,thinking:'disabled'});
     if(!current())return;
     let text='';const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,signal:owned.controller.signal,onDelta:delta=>{if(!current())return;text+=delta;if(action!=='overview')reply.textContent=text;}});
     if(!current())return;
-    if(action==='overview')showOverview(result.text,context.sources);else showAnswer(reply,result.text,context.sources);
+    if(action==='overview')showOverview(result.text,context.sources);else showAnswer(reply,result.text,context.sources,context.coverage);
     if(action==='chat'){
-      const at=Date.now();history.push({role:'user',content:question,at},{role:'assistant',content:result.text,at,sources:context.sources});
+      const at=Date.now();history.push({role:'user',content:question,at},{role:'assistant',content:result.text,at,sources:context.sources,coverage:context.coverage});
       if(qs<HTMLTextAreaElement>('#chat-input').value.trim()===question)qs<HTMLTextAreaElement>('#chat-input').value='';
-      if(state.settings.cache.enabled){const merged=await persistDocumentChatTurn(docId,{id:prepared.request.id,question,answer:result.text,at,sources:context.sources});if(current()){history=merged;renderChat();}}
+      if(state.settings.cache.enabled){const merged=await persistDocumentChatTurn(docId,{id:prepared.request.id,question,answer:result.text,at,sources:context.sources,coverage:context.coverage});if(current()){history=merged;renderChat();}}
     }else if(state.settings.cache.enabled)await idbPut('chats',{key:keyFor(action,index),docId,messages:[{role:'assistant',content:result.text,at:Date.now()}],sources:context.sources,sourceRevision:revision,updatedAt:Date.now()} as StoredAnswer);
     if(current()&&result.storageWarning)reply.append(h('small',{class:'ml-muted'},result.storageWarning));
   }catch(error){if(current()){

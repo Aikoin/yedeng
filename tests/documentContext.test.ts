@@ -17,18 +17,18 @@ describe('bounded document evidence preparation (local only)',()=>{
   expect(c.sources.every(s=>s.truncated)).toBe(true);expect(JSON.stringify(c.messages)).not.toContain(doc.documentText);
   expect(c.coverage).toContain('未读取图片');expect(c.messages[0].content).toContain('首尾抽样');
  });
- it('limits retrieval and conversational history without treating previous answers as paper evidence',()=>{
-  const c=prepareDocumentContext({action:'chat',title:'paper',doc,totalPages:100,question:'why',hits:Array.from({length:30},(_,i)=>({id:String(i),sectionTitle:'S',pageIndex:i,text:'k'.repeat(10000)})),history:Array.from({length:30},()=>({role:'assistant',content:'old'.repeat(1000)}))});
-  expect(c.sources).toHaveLength(6);expect(c.contextChars).toBeLessThanOrEqual(8000);expect(c.historyChars).toBe(4000);
+ it('allocates a larger reading budget and keeps conversation context without treating previous answers as evidence',()=>{
+  const c=prepareDocumentContext({action:'chat',title:'paper',doc,totalPages:100,question:'why',hits:Array.from({length:30},(_,i)=>({id:String(i),sectionTitle:'S',pageIndex:i,text:'k'.repeat(10000)})),history:Array.from({length:10},()=>[{role:'user' as const,content:'Q'.repeat(500)},{role:'assistant' as const,content:'old'.repeat(1000)}]).flat()});
+  expect(c.contextChars).toBeGreaterThan(8000);expect(c.contextChars).toBeLessThanOrEqual(40000);expect(c.historyChars).toBeGreaterThan(4000);expect(c.historyChars).toBeLessThanOrEqual(16000);
   expect(c.messages[0].content).toContain('不能充当本文证据');expect(JSON.stringify(c.messages)).not.toContain(doc.documentText);
  });
  it('deduplicates repeated passages and rejects nonexistent page sources',()=>{
   const hit={id:'1',sectionTitle:'S',pageIndex:7,text:'relevant evidence'};
   const c=prepareDocumentContext({action:'chat',title:'paper',doc,totalPages:100,question:'q',hits:[hit,hit,{...hit,pageIndex:1000}]});
-  expect(c.sources).toHaveLength(1);expect(c.sources[0].pageIndices).toEqual([7]);
+  expect(c.sources.filter(s=>s.pageIndices.includes(7))).toHaveLength(1);expect(c.sources.flatMap(s=>s.pageIndices)).not.toContain(1000);
  });
- it('blocks empty retrieval, scanned-only pages and oversized questions without paper fallback',()=>{
-  expect(()=>prepareDocumentContext({action:'chat',title:'p',doc,totalPages:100,question:'q',hits:[]})).toThrow(/不会回退/);
+ it('uses chapter coverage when retrieval misses while still blocking scanned summaries and oversized questions',()=>{
+  const fallback=prepareDocumentContext({action:'chat',title:'p',doc,totalPages:100,question:'q',hits:[]});expect(fallback.sources.length).toBeGreaterThan(0);expect(fallback.coverage).toContain('不代表论文没有');
   expect(()=>prepareDocumentContext({action:'summary',title:'p',doc:{...doc,pages:[]},totalPages:100})).toThrow(/扫描页/);
   expect(()=>prepareDocumentContext({action:'chat',title:'p',doc,totalPages:100,question:'q'.repeat(2001)})).toThrow(/不会|没有发送/);
  });

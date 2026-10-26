@@ -3,6 +3,8 @@ import { createRequestDispatcher, PROBE_FIXTURES, type DispatcherDependencies, t
 import type { sendPreparedTransport } from '../src/ai/openai';
 import { authorizeExplicitSend, type PreparedRequest } from '../src/ai/preparedRequest';
 import { DEFAULT_SETTINGS } from '../src/shared/settings';
+import { prepareDocumentContext } from '../src/ai/documentContext';
+import type { DocText } from '../src/pdf/extract';
 function harness(overrides:Partial<DispatcherDependencies>={}) {
   const settings=structuredClone(DEFAULT_SETTINGS);
   settings.providers=[{id:'p',name:'Synthetic test',kind:'openai',baseUrl:'https://example.test/v1',apiKey:'fake-only',models:['m'],defaultModel:'m',temperature:.1,maxTokens:128,imageInput:'declared'}];
@@ -18,6 +20,23 @@ function harness(overrides:Partial<DispatcherDependencies>={}) {
   return {dispatcher,runtime,reserve,transport,readResult,writeResult,prepare,scope,setSession:(value:typeof session)=>{session=value;}};
 }
 describe('production prepared dispatcher (synthetic transport, no real API)',()=>{
+  it('sends complete short-paper evidence once and respects configured chat output/thinking defaults',async()=>{
+    const h=harness();h.runtime.settings.providers[0].maxTokens=4096;
+    h.runtime.context.endpoint='https://api.deepseek.com/chat/completions';h.runtime.context.model='deepseek-v4-pro';
+    const texts=['Synthetic introduction','Synthetic middle','Full-duplex models simultaneously listen and speak.'];
+    const doc:DocText={pages:texts.map((text,pageIndex)=>({pageIndex,text,width:600,height:800,lines:[],paragraphs:[]})),sections:[],hasText:true,documentText:texts.join('\n'),headText:'',tailText:''};
+    const context=prepareDocumentContext({action:'chat',title:'Synthetic paper',doc,totalPages:3,question:'啥是全双工模型'});
+    const scope={...h.scope,feature:'chat' as const,action:'document_chat',resultSources:context.sources};
+    const prepared=await h.dispatcher.prepare(scope,context.messages,{temperature:.2});
+    await h.dispatcher.send(prepared,authorizeExplicitSend(prepared.request));
+    expect(h.transport).toHaveBeenCalledOnce();expect(h.reserve).toHaveBeenCalledOnce();
+    expect(h.transport.mock.calls[0][0].parameters?.maxTokens).toBe(4096);
+    expect(h.transport.mock.calls[0][0].parameters).not.toHaveProperty('thinking');
+    expect(JSON.stringify(h.transport.mock.calls[0][0].messages)).toContain(texts[2]);
+    const changed=prepareDocumentContext({action:'chat',title:'Synthetic paper',doc:{...doc,pages:doc.pages.map((p,i)=>i===2?{...p,text:'Changed source definition.'}:p)},totalPages:3,question:'啥是全双工模型'});
+    const updated=await h.dispatcher.prepare({...scope,resultSources:changed.sources},changed.messages,{temperature:.2});
+    expect(updated.cacheKey).not.toBe(prepared.cacheKey);
+  });
   it('freezes exact visible material and duplicate clicks create one attempt/send',async()=>{
     const h=harness(),draft=await h.prepare();
     const results=await Promise.allSettled([h.dispatcher.send(draft,authorizeExplicitSend(draft.request)),h.dispatcher.send(draft,authorizeExplicitSend(draft.request))]);

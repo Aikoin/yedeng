@@ -1,10 +1,10 @@
 import { openDb, type ChatRecord } from './idb';
 import type { DocumentSource } from '../ai/documentContext';
-export interface DocumentChatMessage { role: 'user' | 'assistant'; content: string; at: number; turnId?: string; sources?: DocumentSource[] }
-export function appendChatTurn(previous: DocumentChatMessage[], turn: { id: string; question: string; answer: string; at: number; sources: DocumentSource[] }): DocumentChatMessage[] {
+export interface DocumentChatMessage { role: 'user' | 'assistant'; content: string; at: number; turnId?: string; sources?: DocumentSource[]; coverage?: string }
+export function appendChatTurn(previous: DocumentChatMessage[], turn: { id: string; question: string; answer: string; at: number; sources: DocumentSource[]; coverage?: string }): DocumentChatMessage[] {
   if (previous.some(m => m.turnId === turn.id)) return previous;
   return [...previous, { role: 'user', content: turn.question, at: turn.at, turnId: turn.id },
-    { role: 'assistant', content: turn.answer, at: turn.at, turnId: turn.id, sources: structuredClone(turn.sources) }];
+    { role: 'assistant', content: turn.answer, at: turn.at, turnId: turn.id, sources: structuredClone(turn.sources), ...(turn.coverage?{coverage:turn.coverage}:{}) }];
 }
 /** Serialize appends across tabs; a late response must not overwrite another completed turn. */
 export async function persistDocumentChatTurn(docId: string, turn: Parameters<typeof appendChatTurn>[1]): Promise<DocumentChatMessage[]> {
