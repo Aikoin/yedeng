@@ -140,3 +140,8 @@ it('manual interrupted recovery claims once, while a saved answer stays free to 
  expect(claim).toHaveBeenCalledWith(expect.objectContaining({retryInterrupted:true,explicitRetry:false}));expect(h.transport).toHaveBeenCalledOnce();
  h.readResult.mockResolvedValue('cached answer');const next=await h.prepare();await expect(h.dispatcher.send(next,authorizeExplicitSend(next.request),{retryInterrupted:true})).resolves.toMatchObject({text:'cached answer',fromCache:true});expect(h.transport).toHaveBeenCalledOnce();expect(claim).toHaveBeenCalledOnce();
 });
+
+it('does not cache or persist a length-limited reply as a completed answer',async()=>{
+ const {AiOutputLimitError}=await import('../src/ai/types');const saveCompleted=vi.fn(),h=harness({saveCompleted});h.transport.mockRejectedValueOnce(new AiOutputLimitError('partial',2048));const draft=await h.prepare();
+ await expect(h.dispatcher.send(draft,authorizeExplicitSend(draft.request))).rejects.toMatchObject({partialText:'partial',maxTokens:2048});expect(h.writeResult).not.toHaveBeenCalled();expect(saveCompleted).not.toHaveBeenCalled();expect(h.transport).toHaveBeenCalledOnce();
+});

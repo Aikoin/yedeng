@@ -14,6 +14,7 @@ import { jumpToPage, rebuildIndex, state } from './state';
 import { retrievePaperChat } from '../ai/paperChatContext';
 import { requestSessionGeneration } from './requestWorkspace';
 import { openDocumentSource } from './documentSources';
+import { AiOutputLimitError } from '../ai/types';
 import { parseOverview } from '../ai/overview';
 
 const dispatcher = productionDispatcher(() => ({ docId: state.docId, sessionGeneration: requestSessionGeneration() }));
@@ -137,7 +138,7 @@ function setChatBusy(value:boolean):void {
   if(send){send.disabled=value;send.hidden=value;}
   document.querySelector('#btn-chat-stop')?.classList.toggle('ml-hidden',!value);
 }
-async function run(action:DocumentAction,section?:Section,index?:number,force=false,retryTarget?:{question:string;reply:HTMLElement;docId:string;viewer:object}):Promise<void>{
+async function run(action:DocumentAction,section?:Section,index?:number,force=false,retryTarget?:{question:string;reply:HTMLElement;docId:string;viewer:object;maxTokens?:number}):Promise<void>{
   if(retryTarget&&(state.docId!==retryTarget.docId||state.viewer!==retryTarget.viewer)){toast('请回到原论文再重试','info');return;}
   if(job&&action==='chat'&&job.action!=='chat'){epoch++;job.controller.abort();if(job.output)job.output.textContent='概览已暂停，可稍后重新生成。';job=null;}
   if(job){toast('正在处理当前任务，可以先取消','info');return;}
@@ -148,6 +149,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
   let reply:HTMLElement|undefined;
   let progress:HTMLElement|undefined;
   let context:DocumentContext|undefined;
+  let streamedText='';
   try{
     const output=action==='overview'?qs<HTMLElement>('#summary-body'):action==='keywords'?qs<HTMLElement>('#keywords-body'):action==='sectionSummary'?qs<HTMLElement>(`#document-section-${index}`):qs<HTMLElement>('#chat-log');
     reply=output;
@@ -172,11 +174,11 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     const revision=await sha256Hex(new TextEncoder().encode(JSON.stringify(context.messages)).buffer);
     const scope={type:'document_action' as const,action:`document_${action}`,feature:featureFor(action),docId,sessionGeneration:requestSessionGeneration(),sourceRevision:revision,resultSources:context.sources};
     // Chat follows the provider's configured output budget and thinking defaults, instead of forcing 1600 tokens / thinking off.
-    const parameters={temperature:.2,...(action==='chat'?{}:{maxTokens:action==='overview'?1200:1600})};
+    const parameters={temperature:.2,...(action==='chat'?(retryTarget?.maxTokens?{maxTokens:retryTarget.maxTokens}:{}):{maxTokens:action==='overview'?1200:1600})};
     let prepared=await dispatcher.prepare(scope,context.messages,parameters);
     if(action!=='chat'&&supportsThinkingToggle(prepared.request.endpoint,prepared.request.model))prepared=await dispatcher.prepare(scope,context.messages,{...parameters,thinking:'disabled'});
     if(!current())return;
-    let text='';const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,retryInterrupted:action==='chat',signal:owned.controller.signal,onDelta:delta=>{if(!current())return;text+=delta;if(action!=='overview'&&reply)reply.textContent=text;}});
+    const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,retryInterrupted:action==='chat',signal:owned.controller.signal,onDelta:delta=>{if(!current())return;streamedText+=delta;if(action!=='overview'&&reply)reply.textContent=streamedText;}});
     if(!current())return;
     if(action==='overview')showOverview(result.text,context.sources);else showAnswer(reply,result.text,context.sources,context.coverage);
     if(action==='chat'){
@@ -186,8 +188,19 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     if(current()&&result.storageWarning)reply.append(h('small',{class:'ml-muted'},result.storageWarning));
   }catch(error){if(current()){
     const message=owned.controller.signal.aborted?'已取消，未自动重试。':error instanceof Error?error.message:String(error);
-    if(reply){reply.replaceChildren(h('p',{class:'yd-status'},message));
-      const retry=h('button',{class:'ghost'},'重试');retry.onclick=()=>void run(action,section,index,true,action==='chat'?{question,reply:reply!,docId,viewer}:undefined);reply.append(retry);
+    if(reply){
+      const partial=error instanceof AiOutputLimitError?error.partialText:streamedText;
+      if(partial.trim())showAnswer(reply,partial,context?.sources??[],context?.coverage);else reply.replaceChildren();
+      reply.append(h('p',{class:'yd-status'},message));
+      if(partial.trim())reply.append(h('small',{class:'ml-muted'},'以上为未完成的回答，仅保留在当前页面，尚未存入完整对话。'));
+      const limit=error instanceof AiOutputLimitError?error.maxTokens:undefined;
+      const higher=error instanceof AiOutputLimitError&&action==='chat'&&(!limit||limit<32768)?Math.min(32768,Math.max(8192,(limit??4096)*2)):undefined;
+      if(error instanceof AiOutputLimitError){
+        reply.append(h('small',{class:'ml-muted'},limit?`本次输出上限：${limit} tokens。`:'服务未返回具体输出上限。'));
+        const settings=h('button',{class:'ghost'},'调整输出额度');settings.onclick=()=>void chrome.runtime.sendMessage({type:'open-options'});reply.append(settings);
+      }
+      const retry=h('button',{class:'ghost'},higher?`提高至 ${higher} tokens 重试`:'重试');
+      retry.onclick=()=>void run(action,section,index,true,action==='chat'?{question,reply:reply!,docId,viewer,...(higher?{maxTokens:higher}:retryTarget?.maxTokens?{maxTokens:retryTarget.maxTokens}:{})}:undefined);reply.append(retry);
     }else toast(message,'error');
   }}finally{progress?.remove();if(job===owned){job=null;setChatBusy(false);}}
 }

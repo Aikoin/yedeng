@@ -5,6 +5,7 @@ const mocks=vi.hoisted(()=>({
   state:{docId:'doc',viewer:{},docText:{pages:[],sections:[]},info:{title:'Paper',numPages:2},index:null,settings:{providers:[],routing:{},prompts:{},cache:{enabled:true},reading:{}}} as any,
 }));
 vi.mock('../src/ai/dispatcher',()=>({productionDispatcher:()=>({prepare:mocks.prepare,send:mocks.send,subscribe:vi.fn(),invalidate:vi.fn()}),ensureReaderAiAccess:mocks.access,setDocumentAiPolicy:vi.fn()}));
+vi.mock('../src/ai/types',()=>{class AiOutputLimitError extends Error {constructor(public partialText:string,public maxTokens?:number){super('达到输出上限');}}return {AiOutputLimitError};});
 vi.mock('../src/ai/documentContext',()=>({prepareDocumentContext:()=>({messages:[],sources:[],coverage:'已提供全部文字'})}));
 vi.mock('../src/ai/preparedRequest',()=>({authorizeExplicitSend:()=>({}),supportsThinkingToggle:()=>false}));
 vi.mock('../src/shared/idb',()=>({idbGet:vi.fn(),idbPut:vi.fn()}));
@@ -80,6 +81,16 @@ describe('paper chat repeated send lifecycle',()=>{
   });
   it('manual send authorizes interrupted-task recovery without forcing past completed caches',async()=>{
     click('question');await settle();expect(mocks.send.mock.calls[0][2]).toMatchObject({force:false,retryInterrupted:true});
+  });
+  it('retains incomplete answers and raises the budget only on a deliberate retry',async()=>{
+    const {AiOutputLimitError}=await import('../src/ai/types');
+    mocks.send.mockRejectedValueOnce(new AiOutputLimitError('Partial explanation',2048));click('original');await settle();
+    expect(elements['chat-log'].textContent).toContain('Partial explanation');expect(mocks.persist).not.toHaveBeenCalled();expect(mocks.send).toHaveBeenCalledTimes(1);
+    input().value='next draft';const retry=flat(elements['chat-log']).find(n=>n.tagName==='button'&&n.textContent==='提高至 8192 tokens 重试')!;retry.onclick();await settle();
+    expect(mocks.prepare.mock.calls.at(-1)![2]).toMatchObject({maxTokens:8192});expect(input().value).toBe('next draft');
+  });
+  it('retains received stream text after a network error rather than replacing it with the error',async()=>{
+    mocks.send.mockImplementationOnce(async(_p,_a,options)=>{options.onDelta('Useful partial answer');throw new Error('connection lost');});click('question');await settle();expect(elements['chat-log'].textContent).toContain('Useful partial answer');expect(elements['chat-log'].textContent).toContain('connection lost');expect(mocks.persist).not.toHaveBeenCalled();
   });
   it('recovers from network failure and keeps the failed question in its message bubble',async()=>{
     mocks.send.mockRejectedValueOnce(new Error('network unavailable'));enter('question');await settle();

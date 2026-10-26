@@ -23,7 +23,7 @@ describe('exact prepared transport (synthetic HTTP responses)',()=>{
  it('rejects length-limited output while preserving delivered deltas',async()=>{
   const d=await request(),parts:string[]=[];
   const mock=vi.fn(async()=>sse(['data: {"choices":[{"delta":{"content":"partial"}}]}\n\n','data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\n']));
-  await expect(sendPreparedTransport(d,{apiKey:'fake',signal:new AbortController().signal,fetchImplementation:mock,onDelta:value=>parts.push(value)})).rejects.toThrow('截断');expect(parts).toEqual(['partial']);
+  await expect(sendPreparedTransport(d,{apiKey:'fake',signal:new AbortController().signal,fetchImplementation:mock,onDelta:value=>parts.push(value)})).rejects.toMatchObject({name:'AiOutputLimitError',partialText:'partial',maxTokens:20});expect(parts).toEqual(['partial']);
  });
  it('status errors do not echo untrusted provider body or retry',async()=>{
   const d=await request(),mock=vi.fn(async()=>new Response('KEY-secret + private paper text',{status:429}));
@@ -39,4 +39,9 @@ it('sends visible thinking only when it is part of the prepared official request
   const body=JSON.parse(String((mock.mock.calls[0] as unknown as [string,RequestInit])[1].body));
   expect(body).toEqual(preparedBody(draft));expect(body.thinking).toEqual({type:'disabled'});
   expect(preparedBody(original)).not.toHaveProperty('thinking');expect(mock).toHaveBeenCalledOnce();
+});
+
+it('reports empty length-limited JSON honestly, without claiming text was retained',async()=>{
+ const d=await request(false),mock=vi.fn(async()=>new Response(JSON.stringify({choices:[{message:{content:''},finish_reason:'length'}]}),{headers:{'Content-Type':'application/json'}}));
+ await expect(sendPreparedTransport(d,{apiKey:'fake',signal:new AbortController().signal,fetchImplementation:mock})).rejects.toMatchObject({name:'AiOutputLimitError',partialText:'',maxTokens:20,message:expect.stringContaining('尚未返回')});expect(mock).toHaveBeenCalledOnce();
 });

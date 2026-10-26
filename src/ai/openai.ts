@@ -2,7 +2,7 @@
  * OpenAI 兼容适配器：POST {baseUrl}/chat/completions，SSE 流式。
  * 扩展页带着 host_permissions 发请求，天然绕开 CORS，所以中转站/自建服务无需改 CORS。
  */
-import { AiError, type ChatRequest, type ProviderConnection, type TokenUsage } from './types';
+import { AiError, AiOutputLimitError, type ChatRequest, type ProviderConnection, type TokenUsage } from './types';
 import type { PreparedRequest } from './preparedRequest';
 
 interface StreamOptions {
@@ -225,7 +225,7 @@ export async function sendPreparedTransport(request: PreparedRequest, options: {
     const content = streaming ? choice?.delta?.content : choice?.message?.content;
     if (typeof content === 'string') append(content);
     if (choice?.finish_reason === 'content_filter' || choice?.finish_reason === 'tool_calls' || choice?.finish_reason === 'function_call') throw new AiError('模型没有完成普通文本回答，未保存为成功结果');
-    if (choice?.finish_reason === 'length') throw new AiError('模型因输出长度上限截断，已保留部分内容；不会缓存为完整结果');
+    if (choice?.finish_reason === 'length') throw new AiOutputLimitError(text,request.parameters?.maxTokens);
     return typeof choice?.finish_reason === 'string' && choice.finish_reason !== 'length';
   }
   if (!(request.parameters?.stream ?? true) || response.headers.get('content-type')?.includes('application/json')) {

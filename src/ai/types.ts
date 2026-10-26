@@ -58,3 +58,13 @@ export function describeAiError(err: unknown): { message: string; hint?: string 
   const message = err instanceof Error ? err.message : String(err);
   return { message };
 }
+
+/** Incomplete output must never enter a successful-answer cache. */
+export class AiOutputLimitError extends AiError {
+  constructor(public partialText: string, public maxTokens?: number) {
+    super(partialText.trim()
+      ? '回答达到输出上限，以下内容尚未完成。'
+      : '模型达到输出上限，但尚未返回可显示的正文。');
+    this.name = 'AiOutputLimitError';
+  }
+}
