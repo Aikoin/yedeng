@@ -1,5 +1,6 @@
+import {interpretationId,loadInterpretation,saveInterpretation} from '../shared/interpretations';
 import {loadRegionAssets,blobDataUrl} from '../evidence/repository';
-import {openObjectView,objectNavigationBar} from './assistantNavigation';
+import {openObjectView,objectNavigationBar,notifyNotebook} from './assistantNavigation';
 import { renderMarkdown } from './markdown';
 /** G2 reader preparation UI. All source material is visible before a single explicit send. */
 import { h } from '../shared/dom';
@@ -32,8 +33,9 @@ export function requestSessionGeneration(): number | null {
 const dispatcher = productionDispatcher(() => ({ docId: state.docId, sessionGeneration: requestSessionGeneration() }));
 interface Draft {
   docId: string; viewer: object; snapshot: SelectionSnapshot; action: 'explain' | 'translate';
+  interpretationId?:string;
   system: string; context: string; originalContext: string; contextQuads: NonNullable<EvidenceAttachment['sourceQuads']>; sourceId: string; includeContext: boolean; question: string;
-  evidence: readonly EvidenceAttachment[]; sourceKind?: 'image'; targetLanguage: string; turns?:{question:string;answer:string;sources:readonly EvidenceAttachment[]}[]; thinking: 'default'|'disabled'|'enabled';
+  evidence: readonly EvidenceAttachment[]; sourceKind?: 'image'; targetLanguage: string; turns?:{question:string;answer:string;sources:readonly EvidenceAttachment[];cacheKey?:string}[]; thinking: 'default'|'disabled'|'enabled';
 }
 let draft: Draft | null = null, prepared: PreparedDocument | null = null, version = 0;
 let currentController: AbortController | null = null, running = false;
@@ -44,7 +46,7 @@ let sourceButtons:HTMLElement|null=null;
 let thinkingControl: HTMLElement | null = null;
 let regenerateButton: HTMLButtonElement | null = null;
 let registered = false;
-function current(value = draft): value is Draft { return !!value && value.docId === state.docId && value.viewer === state.viewer; }
+function current(value = draft): value is Draft { return !!value && value === draft && value.docId === state.docId && value.viewer === state.viewer; }
 function status(text: string, error = false): void {
   if (statusHost) { statusHost.textContent = text; statusHost.dataset.kind = error ? 'error' : 'normal'; }
 }
@@ -108,6 +110,13 @@ export async function prepareSelectionRequest(snapshot: SelectionSnapshot, actio
     system: action==='translate'?translationSystem(state.settings.translate.targetLang||'zh-CN',state.settings.prompts.translate):[system, state.settings.prompts.custom ?? '', '引用仅使用材料中给定的 [E1]、[E2] 等标识。不要编造编号、页码或来源；材料不足时明确说明。'].filter(Boolean).join('\n\n'), context: formatSelectionContext(context), originalContext: action==='translate'?context.excerpts.filter(e=>e.kind==='paragraph').map(e=>e.text).join('\n').slice(0,1200):formatSelectionContext(context), sourceId: crypto.randomUUID(),
     contextQuads: context.excerpts.flatMap(excerpt=>{const paragraph=state.docText?.pages.find(page=>page.pageIndex===excerpt.pageIndex)?.paragraphs[Number(excerpt.id.split(':')[1])];return paragraph && paragraph.text===excerpt.text?[{pageIndex:excerpt.pageIndex,quads:[[{x:paragraph.x,y:paragraph.yTop},{x:paragraph.xEnd,y:paragraph.yTop},{x:paragraph.xEnd,y:paragraph.yBottom},{x:paragraph.x,y:paragraph.yBottom}]]}]:[];}), includeContext: action !== 'translate',
     question: '', evidence: [], thinking:'disabled', targetLanguage: state.settings.translate.targetLang || 'zh-CN' };
+  const value=draft;
+  if(action==='explain'){
+    const id=await interpretationId(value.docId,snapshot);if(!current(value))return;
+    value.interpretationId=id;
+    const stored=await loadInterpretation(id);if(!current(value))return;
+    if(stored)value.turns=stored.turns.map(t=>({...t,sources:t.sources.map(source=>({...source,docId:value.docId,kind:'text' as const}))}));
+  }
   prepared = null; running = false;  openPanel(); renderDraft(); await rebuild();
 }
 function labelledSources(value: Draft): readonly EvidenceAttachment[] {
@@ -181,7 +190,8 @@ function renderDraft(): void {
  ask.onclick=()=>void askFollow().catch(error=>status(String(error),true));follow.onkeydown=event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();void askFollow().catch(error=>status(String(error),true));}};
  abortButton=h('button',{class:'ghost',disabled:true},'取消生成');abortButton.hidden=true;abortButton.onclick=()=>currentController?.abort();
  regenerateButton=h('button',{class:'ghost',disabled:true},'重新生成');regenerateButton.hidden=true;regenerateButton.onclick=()=>{if(!running)void send(true);};
- const transcript=h('div',{class:'yd-selection-transcript'});(value.turns??[]).slice(0,-1).forEach(turn=>transcript.append(h('div',{class:'ml-bubble ml-bubble--user'},turn.question),h('div',{class:'ml-bubble ml-bubble--ai'},turn.answer)));
+ const transcript=h('div',{class:'yd-selection-transcript'});(value.turns??[]).slice(0,-1).forEach(turn=>transcript.append(h('div',{class:'ml-bubble ml-bubble--user'},turn.question),renderMarkdown(turn.answer,{evidenceSources:turn.sources.map((source,i)=>({id:`E${i+1}`,pageIndices:source.pageIndices})),onEvidenceCite:id=>{const source=turn.sources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>status(String(error),true));}})));
+ const latest=value.turns?.at(-1);if(latest)transcript.append(h('div',{class:'ml-bubble ml-bubble--user'},latest.question));
  host.replaceChildren(objectNavigationBar(),h('div',{class:'yd-workspace-body'},h('div',{class:'yd-object-heading'},h('small',{},`第 ${value.snapshot.pageIndex+1} 页`),h('h2',{},value.sourceKind==='image'?'看懂这幅图':'理解这一段')),source,statusHost,transcript,result,sourceButtons),h('div',{class:'yd-object-composer'},h('small',{class:'yd-chat-context'},`${value.sourceKind==='image'?'图表':'所选文字'} · 第 ${value.snapshot.pageIndex+1} 页`),h('div',{class:'yd-reference-chips'}),follow,h('div',{class:'ml-row'},h('button',{class:'ghost',on:{click:()=>void chooseReference().catch(error=>status(String(error),true))}},'＋ 参考'),abortButton,regenerateButton,ask)));
 
 }
@@ -210,7 +220,9 @@ async function rebuild(): Promise<void> {
 async function send(force:boolean):Promise<void>{
   const value=draft;if(!current(value)||running||READER_STAGE==='G1')return;
   if(force){await rebuild();if(!prepared||!current(value))return;}
-  const target=prepared;if(!target)return;const transcript=host?.querySelector('.yd-selection-transcript');if(transcript&&value.turns?.length&&!force){const turn=value.turns.at(-1)!;transcript.append(h('div',{class:'ml-bubble ml-bubble--user'},turn.question),renderMarkdown(turn.answer,{evidenceSources:turn.sources.map((s,i)=>({id:`E${i+1}`,pageIndices:s.pageIndices})),onEvidenceCite:id=>{const source=turn.sources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>status(String(error),true));}}));}running=true;const controller=new AbortController();currentController=controller;
+  const target=prepared;if(!target)return;const transcript=host?.querySelector('.yd-selection-transcript');
+  if(transcript){transcript.replaceChildren();for(const turn of value.turns??[])transcript.append(h('div',{class:'ml-bubble ml-bubble--user'},turn.question),renderMarkdown(turn.answer,{evidenceSources:turn.sources.map((s,i)=>({id:`E${i+1}`,pageIndices:s.pageIndices})),onEvidenceCite:id=>{const source=turn.sources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>status(String(error),true));}}));transcript.append(h('div',{class:'ml-bubble ml-bubble--user'},value.question||'解释这段原文'));}
+  running=true;const controller=new AbortController();currentController=controller;
   host?.querySelectorAll<HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement>('input:not([data-policy-control]),textarea,select').forEach(field=>{field.disabled=true;});
   if(savedButton)savedButton.disabled=true;if(sendButton)sendButton.disabled=true;if(abortButton){abortButton.disabled=false;abortButton.hidden=false;}if(result){result.textContent='';result.dataset.stale='false';result.dataset.rendered='false';}if(sourceButtons)sourceButtons.replaceChildren();if(regenerateButton)regenerateButton.disabled=true;
   const translationCopy=host?.querySelector<HTMLButtonElement>('[data-translation-copy]');if(translationCopy)translationCopy.disabled=true;
@@ -223,13 +235,45 @@ async function send(force:boolean):Promise<void>{
       onDelta:delta=>{if(result&&current(value)&&runVersion===version)stream.push(delta);}});
     stream.stop();
     if(!current(value)||runVersion!==version)return;
-    if(result){result.replaceChildren(renderMarkdown(answer.text,value.action==='translate'?{}:{evidenceSources:sentSources.map((source,i)=>({id:`E${i+1}`,pageIndices:source.pageIndices,label:source.label})),onEvidenceCite:id=>{const source=sentSources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>status(String(error),true));}}));result.dataset.rendered='true';}value.turns??=[];value.turns.push({question:value.question||value.snapshot.text.slice(0,1000),answer:answer.text,sources:sentSources.map(source=>({...source,image:undefined}))});if(value.turns.length>12)value.turns.shift();if(regenerateButton){regenerateButton.disabled=false;regenerateButton.hidden=false;}
+    if(result){result.replaceChildren(renderMarkdown(answer.text,value.action==='translate'?{}:{evidenceSources:sentSources.map((source,i)=>({id:`E${i+1}`,pageIndices:source.pageIndices,label:source.label})),onEvidenceCite:id=>{const source=sentSources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>status(String(error),true));}}));result.dataset.rendered='true';}value.turns??=[];value.turns.push({question:value.question||'解释这段原文',answer:answer.text,cacheKey:target.cacheKey,sources:sentSources.map(source=>({...source,image:undefined}))});if(regenerateButton){regenerateButton.disabled=false;regenerateButton.hidden=false;}
     const copy=host?.querySelector<HTMLButtonElement>('[data-translation-copy]');if(copy)copy.disabled=false;
     renderSourceNavigation(sentSources);
     const known=new Set(sentSources.map((_,index)=>`E${index+1}`));const unknown=[...answer.text.matchAll(/\[(E\d+)\]/g)].map(match=>match[1]).filter(id=>!known.has(id));
-    status(answer.storageWarning??(answer.fromCache?'本地已保存':'已完成'),!!answer.storageWarning);if(value.action!=='translate'&&unknown.length)status(`回答包含未提供的引用 ${[...new Set(unknown)].join('、')}；没有为这些编号生成跳转。`,true);
+    let historyWarning='';
+    if(value.action==='explain'&&value.sourceKind!=='image'){
+      try{await persistInterpretation(value);notifyNotebook();}
+      catch{historyWarning='解读尚未保存，请点击重试保存';if(current(value)&&sourceButtons){const retry=h('button',{},'重试保存');retry.onclick=()=>{retry.disabled=true;void persistInterpretation(value).then(()=>{notifyNotebook();if(current(value)){status('已保存到笔记 · 解读');retry.remove();}}).catch(()=>{retry.disabled=false;if(current(value))status('仍未保存，请先复制回答',true);});};sourceButtons.append(retry);}}
+    }
+    if(!current(value)||runVersion!==version)return;
+    status(historyWarning||answer.storageWarning||(value.interpretationId?'已保存到笔记 · 解读':answer.fromCache?'本地已保存':'已完成'),!!(historyWarning||answer.storageWarning));if(value.action!=='translate'&&unknown.length)status(`回答包含未提供的引用 ${[...new Set(unknown)].join('、')}；没有为这些编号生成跳转。`,true);
   }catch(error){stream.stop();if(current(value)&&runVersion===version){if(regenerateButton){regenerateButton.disabled=false;regenerateButton.hidden=false;}status(`${error instanceof Error?error.message:'发送失败'}。${value.action==='translate'?'可点击重新翻译。':'材料与部分结果保留；不会自动重试。'}`,true);}}
   finally{stream.stop();if(current(value)&&runVersion===version){running=false;if(currentController===controller)currentController=null;if(abortButton){abortButton.disabled=true;abortButton.hidden=true;}prepared=null;if(sendButton)sendButton.disabled=true;host?.querySelectorAll<HTMLInputElement|HTMLTextAreaElement|HTMLSelectElement>('input:not([data-policy-control]),textarea,select').forEach(field=>{field.disabled=false;});}}
+}
+
+async function persistInterpretation(value:Draft):Promise<void>{
+ if(!value.interpretationId)return;
+ await saveInterpretation({id:value.interpretationId,docId:value.docId,snapshot:value.snapshot,context:value.originalContext,contextQuads:value.contextQuads,sourceId:value.sourceId,
+ turns:(value.turns??[]).map(t=>({question:t.question,answer:t.answer,sources:[...t.sources],cacheKey:t.cacheKey??''}))});
+}
+export async function openInterpretation(id:string):Promise<void>{
+ if(running)throw new Error('请等待当前回答完成，或先停止生成');
+ const docId=state.docId,viewer=state.viewer,stored=await loadInterpretation(id);
+ if(!stored||stored.docId!==docId||state.docId!==docId||state.viewer!==viewer)throw new Error('无法打开这条解读');
+ await prepareSelectionRequest(stored.snapshot,'explain');
+ const value=draft;if(!current(value)||value.docId!==docId)return;
+ value.context=stored.context;value.originalContext=stored.context;value.contextQuads=stored.contextQuads;value.sourceId=stored.sourceId;value.question='';
+ renderDraft();const last=value.turns?.at(-1);
+ if(last&&result){result.replaceChildren(renderMarkdown(last.answer,{evidenceSources:last.sources.map((s,i)=>({id:`E${i+1}`,pageIndices:s.pageIndices})),onEvidenceCite:id=>{const source=last.sources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>status(String(error),true));}}));renderSourceNavigation(last.sources);}
+ status('已保存到笔记 · 解读');
+}
+export async function openLegacyInterpretation(id:string):Promise<void>{
+ if(running)throw new Error('请先等待当前回答完成');
+ const docId=state.docId,viewer=state.viewer,records=docId?await listSavedResults(docId):[];
+ if(state.docId!==docId||state.viewer!==viewer)return;
+ const record=records.find(r=>r.id===id);if(!record||!host)throw new Error('未找到这条解读');
+ resetRequestWorkspace();openPanel();host.hidden=false;
+ const sources=record.sources.map(s=>({...s,docId:docId!,kind:'text' as const}));
+ host.replaceChildren(objectNavigationBar(),h('div',{class:'yd-workspace-body'},h('h2',{},'解读'),h('p',{class:'ml-muted'},'旧版保存的回答。未保存完整选中文字，请重新选择原文后继续提问。'),renderMarkdown(record.resultText,{evidenceSources:sources.map((s,i)=>({id:`E${i+1}`,pageIndices:s.pageIndices})),onEvidenceCite:id=>{const source=sources[Number(id.slice(1))-1];if(source)void returnToEvidenceSource(source).catch(error=>{if(host)host.append(h('p',{role:'status'},String(error)));});}})));
 }
 
 async function showDocumentHistory():Promise<void>{
