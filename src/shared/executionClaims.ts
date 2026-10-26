@@ -1,7 +1,7 @@
 import { openDb, type TaskRecord } from './idb';
 export class ExecutionBusyError extends Error {constructor(){super('相同任务正在另一个页面运行，请查看原任务；本次未发送');this.name='ExecutionBusyError';}}
 export class ExecutionClaimLostError extends Error {constructor(){super('任务执行权已变化，旧任务结果未覆盖当前记录');this.name='ExecutionClaimLostError';}}
-export interface ExecutionClaimInput {cacheKey:string;taskId:string;docId:string|null;snapshotHash:string;leaseOwner:string;leaseMs?:number;explicitRetry?:boolean}
+export interface ExecutionClaimInput {cacheKey:string;taskId:string;docId:string|null;snapshotHash:string;leaseOwner:string;leaseMs?:number;explicitRetry?:boolean;retryInterrupted?:boolean}
 export interface ExecutionToken {cacheKey:string;taskId:string;leaseOwner:string}
 export interface ExecutionClaimResult {state:'claimed'|'completed'|'interrupted';record:TaskRecord}
 export function createExecutionClaims(deps:{openDatabase?:()=>Promise<IDBDatabase>;now?:()=>number;newId?:()=>string}={}){
@@ -13,7 +13,7 @@ export function createExecutionClaims(deps:{openDatabase?:()=>Promise<IDBDatabas
    if(old?.status==='running'&&(old.leaseUntil??0)>timestamp)throw new ExecutionBusyError();
    if(old?.status==='running'){old={...old,status:'interrupted',leaseUntil:0,updatedAt:timestamp};store.put(old);}
    if(old?.status==='completed'&&!input.explicitRetry)return{state:'completed',record:old};
-   if(old&&!input.explicitRetry)return{state:'interrupted',record:old};
+   if(old&&!input.explicitRetry&&!input.retryInterrupted)return{state:'interrupted',record:old};
    if(old)store.put({...old,id:`execution-history:${input.cacheKey}:${old.taskId??old.id}`});
    const record:TaskRecord={id:`execution:${input.cacheKey}`,cacheKey:input.cacheKey,taskId:input.taskId,docId:input.docId,snapshotHash:input.snapshotHash,leaseOwner:input.leaseOwner,leaseUntil:timestamp+leaseMs,status:'running',updatedAt:timestamp};store.put(record);return{state:'claimed',record};});}
  async function finish(input:ExecutionToken&{status:'completed'|'failed'|'cancelled'|'interrupted';resultText?:string}):Promise<void>{await mutate(input.cacheKey,(record,store)=>{if(!matches(record,input))throw new ExecutionClaimLostError();const updated={...record!,status:input.status,leaseUntil:0,updatedAt:now()};if(input.resultText!==undefined)updated.resultText=input.resultText;store.put(updated);});}

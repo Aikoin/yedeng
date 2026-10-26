@@ -111,7 +111,7 @@ export function createRequestDispatcher(deps: DispatcherDependencies) {
     return { request, inputModality, targetName: runtime.providerName, imageBlockReason:runtime.imageRouteError??imageInputBlockReason(request.endpoint,request.model,runtime.imageInput), imageInput: runtime.imageInput ?? 'unknown', policy: runtime.context.document?.policy ?? 'deny_all_ai', cacheKey };
   }
   async function send(document: PreparedDocument, token: ExplicitSendToken, options: {
-    signal?: AbortSignal; force?: boolean; onDelta?: (delta: string) => void; onStatus?: (status: string) => void; timeoutMs?: number;
+    signal?: AbortSignal; force?: boolean; retryInterrupted?: boolean; onDelta?: (delta: string) => void; onStatus?: (status: string) => void; timeoutMs?: number;
   } = {}): Promise<DispatchResult> {
     const request = document.request, binding = bindings.get(request);
     if (!binding) throw new Error('只能发送由本准备区创建的快照');
@@ -154,7 +154,7 @@ export function createRequestDispatcher(deps: DispatcherDependencies) {
         }
       }
       if(deps.claim){
-        const claim=await deps.claim({...executionToken,docId:request.docId,snapshotHash:request.snapshotHash,explicitRetry:options.force??false});
+        const claim=await deps.claim({...executionToken,docId:request.docId,snapshotHash:request.snapshotHash,explicitRetry:options.force??false,retryInterrupted:options.retryInterrupted??false});
         if(claim.state==='claimed')claimed=true;
         await checkLive();
         if(claim.state==='completed'){

@@ -137,12 +137,13 @@ function setChatBusy(value:boolean):void {
   if(send){send.disabled=value;send.hidden=value;}
   document.querySelector('#btn-chat-stop')?.classList.toggle('ml-hidden',!value);
 }
-async function run(action:DocumentAction,section?:Section,index?:number,force=false):Promise<void>{
+async function run(action:DocumentAction,section?:Section,index?:number,force=false,retryTarget?:{question:string;reply:HTMLElement;docId:string;viewer:object}):Promise<void>{
+  if(retryTarget&&(state.docId!==retryTarget.docId||state.viewer!==retryTarget.viewer)){toast('请回到原论文再重试','info');return;}
   if(job&&action==='chat'&&job.action!=='chat'){epoch++;job.controller.abort();if(job.output)job.output.textContent='概览已暂停，可稍后重新生成。';job=null;}
   if(job){toast('正在处理当前任务，可以先取消','info');return;}
   const docId=state.docId,viewer=state.viewer,doc=state.docText;if(!docId||!viewer||!doc){toast('请先打开论文','info');return;}
   if(!isConfigured(state.settings)){void chrome.tabs.create({url:chrome.runtime.getURL('welcome/index.html')+'?returnTo='+encodeURIComponent(location.href)});return;}
-  const question=action==='chat'?qs<HTMLTextAreaElement>('#chat-input').value.trim():'';if(action==='chat'&&!question)return;
+  const question=action==='chat'?(retryTarget?.question??qs<HTMLTextAreaElement>('#chat-input').value.trim()):'';if(action==='chat'&&!question)return;
   const owned={action,docId,viewer,epoch,controller:new AbortController(),output:undefined as HTMLElement|undefined};job=owned;const current=()=>job===owned&&state.docId===docId&&state.viewer===viewer&&epoch===owned.epoch;
   let reply:HTMLElement|undefined;
   let progress:HTMLElement|undefined;
@@ -153,8 +154,13 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     if(action==='chat'){
       // The empty-state card is absent after the first turn; its absence is normal.
       output.querySelector('.yd-chat-empty')?.remove();
-      output.append(h('article',{class:'ml-bubble ml-bubble--user'},question));
-      reply=h('article',{class:'ml-bubble ml-bubble--ai'},'正在阅读相关段落…');output.append(reply);setChatBusy(true);
+      if(retryTarget){reply=retryTarget.reply;reply.textContent='正在重试…';}
+      else{
+        output.append(h('article',{class:'ml-bubble ml-bubble--user'},question));
+        reply=h('article',{class:'ml-bubble ml-bubble--ai'},'正在阅读相关段落…');output.append(reply);
+        qs<HTMLTextAreaElement>('#chat-input').value='';
+      }
+      setChatBusy(true);
     }else output.textContent='正在阅读与整理…';
     owned.output=reply;
     progress=h('div',{class:'yd-inline-progress'},h('span',{class:'ml-spinner'}),h('span',{},'生成中'),h('button',{class:'ghost'},'取消'));
@@ -170,19 +176,18 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     let prepared=await dispatcher.prepare(scope,context.messages,parameters);
     if(action!=='chat'&&supportsThinkingToggle(prepared.request.endpoint,prepared.request.model))prepared=await dispatcher.prepare(scope,context.messages,{...parameters,thinking:'disabled'});
     if(!current())return;
-    let text='';const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,signal:owned.controller.signal,onDelta:delta=>{if(!current())return;text+=delta;if(action!=='overview'&&reply)reply.textContent=text;}});
+    let text='';const result=await dispatcher.send(prepared,authorizeExplicitSend(prepared.request),{force,retryInterrupted:action==='chat',signal:owned.controller.signal,onDelta:delta=>{if(!current())return;text+=delta;if(action!=='overview'&&reply)reply.textContent=text;}});
     if(!current())return;
     if(action==='overview')showOverview(result.text,context.sources);else showAnswer(reply,result.text,context.sources,context.coverage);
     if(action==='chat'){
       const at=Date.now();history.push({role:'user',content:question,at},{role:'assistant',content:result.text,at,sources:context.sources,coverage:context.coverage});
-      if(qs<HTMLTextAreaElement>('#chat-input').value.trim()===question)qs<HTMLTextAreaElement>('#chat-input').value='';
       if(state.settings.cache.enabled){const merged=await persistDocumentChatTurn(docId,{id:prepared.request.id,question,answer:result.text,at,sources:context.sources,coverage:context.coverage});if(current()){history=merged;renderChat();}}
     }else if(state.settings.cache.enabled)await idbPut('chats',{key:keyFor(action,index),docId,messages:[{role:'assistant',content:result.text,at:Date.now()}],sources:context.sources,sourceRevision:revision,updatedAt:Date.now()} as StoredAnswer);
     if(current()&&result.storageWarning)reply.append(h('small',{class:'ml-muted'},result.storageWarning));
   }catch(error){if(current()){
     const message=owned.controller.signal.aborted?'已取消，未自动重试。':error instanceof Error?error.message:String(error);
     if(reply){reply.replaceChildren(h('p',{class:'yd-status'},message));
-      const retry=h('button',{class:'ghost'},'重试');retry.onclick=()=>void run(action,section,index,true);reply.append(retry);
+      const retry=h('button',{class:'ghost'},'重试');retry.onclick=()=>void run(action,section,index,true,action==='chat'?{question,reply:reply!,docId,viewer}:undefined);reply.append(retry);
     }else toast(message,'error');
   }}finally{progress?.remove();if(job===owned){job=null;setChatBusy(false);}}
 }

@@ -133,3 +133,10 @@ it('a durable completed execution restores locally after restart without another
  const claim:NonNullable<DispatcherDependencies['claim']>=async input=>({state:'completed',record:{id:'execution',docId:'d',status:'completed',snapshotHash:input.snapshotHash,updatedAt:1,resultText:'durable answer'}});
  const h=harness({claim}),d=await h.prepare();expect(await h.dispatcher.send(d,authorizeExplicitSend(d.request))).toMatchObject({text:'durable answer',fromCache:true});expect(h.reserve).not.toHaveBeenCalled();expect(h.transport).not.toHaveBeenCalled();
 });
+
+it('manual interrupted recovery claims once, while a saved answer stays free to read',async()=>{
+ const claim:NonNullable<DispatcherDependencies['claim']>=vi.fn(async input=>({state:input.retryInterrupted?'claimed' as const:'interrupted' as const,record:{id:'execution',docId:'d',status:'interrupted' as const,snapshotHash:input.snapshotHash,updatedAt:1}}));
+ const h=harness({claim}),draft=await h.prepare();await h.dispatcher.send(draft,authorizeExplicitSend(draft.request),{retryInterrupted:true});
+ expect(claim).toHaveBeenCalledWith(expect.objectContaining({retryInterrupted:true,explicitRetry:false}));expect(h.transport).toHaveBeenCalledOnce();
+ h.readResult.mockResolvedValue('cached answer');const next=await h.prepare();await expect(h.dispatcher.send(next,authorizeExplicitSend(next.request),{retryInterrupted:true})).resolves.toMatchObject({text:'cached answer',fromCache:true});expect(h.transport).toHaveBeenCalledOnce();expect(claim).toHaveBeenCalledOnce();
+});

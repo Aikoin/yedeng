@@ -71,9 +71,19 @@ describe('paper chat repeated send lifecycle',()=>{
   it('releases the job after preparation fails and allows resending',async()=>{
     mocks.prepare.mockRejectedValueOnce(new Error('configuration changed'));click('first');await settle();expect(elements['chat-log'].textContent).toContain('configuration changed');enter('second');await settle();expect(mocks.send).toHaveBeenCalledTimes(1);
   });
-  it('recovers from network failure and keeps the question for another attempt',async()=>{
+  it('clears immediately and retries the captured question without consuming a new draft or duplicating bubbles',async()=>{
+    mocks.send.mockRejectedValueOnce(new Error('failed'));click('original');expect(input().value).toBe('');await settle();
+    const count=elements['chat-log'].children.length;input().value='new draft';
+    const retry=flat(elements['chat-log']).find(n=>n.tagName==='button'&&n.textContent==='重试')!;retry.onclick();await settle();
+    expect(mocks.persist.mock.calls[0][1].question).toBe('original');expect(input().value).toBe('new draft');expect(elements['chat-log'].children.length).toBe(count);
+    expect(mocks.send.mock.calls[1][2]).toMatchObject({force:true,retryInterrupted:true});
+  });
+  it('manual send authorizes interrupted-task recovery without forcing past completed caches',async()=>{
+    click('question');await settle();expect(mocks.send.mock.calls[0][2]).toMatchObject({force:false,retryInterrupted:true});
+  });
+  it('recovers from network failure and keeps the failed question in its message bubble',async()=>{
     mocks.send.mockRejectedValueOnce(new Error('network unavailable'));enter('question');await settle();
-    expect(input().value).toBe('question');expect(elements['chat-log'].textContent).toContain('network unavailable');
+    expect(input().value).toBe('');expect(elements['chat-log'].textContent).toContain('question');expect(elements['chat-log'].textContent).toContain('network unavailable');
     click('question');await settle();expect(mocks.send).toHaveBeenCalledTimes(2);expect(input().value).toBe('');
   });
   it('cancels an in-flight answer then accepts another question',async()=>{

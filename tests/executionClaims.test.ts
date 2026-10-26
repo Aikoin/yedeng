@@ -11,3 +11,15 @@ describe('durable execution claim contract',()=>{
  it('rejects an old worker finish instead of overwriting the current owner',async()=>{const f=fixture(running),p=f.repo.finish({cacheKey:'key',taskId:'obsolete',leaseOwner:'old',status:'completed',resultText:'late'});await Promise.resolve();f.request.onsuccess?.();await expect(p).rejects.toBeInstanceOf(ExecutionClaimLostError);expect(f.store.put).not.toHaveBeenCalled();});
  it('does not report ownership before transaction commit',async()=>{const f=fixture(),p=f.repo.claim(input);let settled=false;void p.then(()=>{settled=true;});await Promise.resolve();f.request.onsuccess?.();await Promise.resolve();expect(settled).toBe(false);f.tx.oncomplete?.();await expect(p).resolves.toMatchObject({state:'claimed'});});
 });
+
+it('manual resubmission recovers failed/cancelled/interrupted work but reuses completed results',async()=>{
+ for(const status of ['failed','cancelled','interrupted','completed'] as const){
+  const f=fixture({...running,status,resultText:status==='completed'?'saved':undefined}),p=f.repo.claim({...input,retryInterrupted:true});
+  await Promise.resolve();f.request.onsuccess?.();f.tx.oncomplete?.();
+  await expect(p).resolves.toMatchObject({state:status==='completed'?'completed':'claimed'});
+  if(status==='completed')expect(f.store.put).not.toHaveBeenCalled();
+ }
+});
+it('manual resubmission cannot steal an active execution',async()=>{
+ const f=fixture(running),p=f.repo.claim({...input,retryInterrupted:true});await Promise.resolve();f.request.onsuccess?.();await expect(p).rejects.toBeInstanceOf(ExecutionBusyError);expect(f.store.put).not.toHaveBeenCalled();
+});
