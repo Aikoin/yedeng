@@ -24,3 +24,16 @@ it('propagates transaction failure and leaves the previous complete history inta
  await expect(saveInterpretation(row)).rejects.toThrow('disk full');expect((await listInterpretations('paper'))[0].turns).toHaveLength(1);
  await saveInterpretation(row);expect((await loadInterpretation(row.id))?.turns).toHaveLength(2);
 });
+it('deletes and restores without losing turns, and keeps deletion across later answer saves',async()=>{
+ const {setInterpretationDeleted,deletedInterpretationIds}=await import('../src/shared/interpretations');
+ const row=await input();await saveInterpretation(row);await setInterpretationDeleted(row.id,'paper',true);await saveInterpretation(row);
+ expect((await deletedInterpretationIds('paper')).has(row.id)).toBe(true);expect((await loadInterpretation(row.id))?.turns).toHaveLength(1);
+ await setInterpretationDeleted(row.id,'paper',false);expect((await deletedInterpretationIds('paper')).size).toBe(0);
+});
+it('supports old explanations and refuses cross-document deletion',async()=>{
+ const {setInterpretationDeleted,deletedInterpretationIds}=await import('../src/shared/interpretations');
+ db.set('saved-result:old',{id:'saved-result:old',docId:'paper',action:'explain',resultText:'old answer'});
+ await expect(setInterpretationDeleted('saved-result:old','other',true)).rejects.toThrow();
+ await setInterpretationDeleted('saved-result:old','paper',true);expect((await deletedInterpretationIds('paper')).has('saved-result:old')).toBe(true);
+ expect((db.get('saved-result:old') as {resultText:string}).resultText).toBe('old answer');
+});

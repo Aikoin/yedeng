@@ -26,3 +26,14 @@ export async function saveInterpretation(input:Pick<Interpretation,'id'|'docId'|
  turns:input.turns.map(t=>({question:t.question,answer:t.answer,cacheKey:t.cacheKey,sources:copyResultSources(t.sources)}))};
  await idbPut('tasks',record);
 }
+
+/** Separate tombstones survive later cache writes and allow reversible deletion. */
+export async function deletedInterpretationIds(docId:string):Promise<Set<string>>{
+ const rows=await idbGetAll('tasks');
+ return new Set(rows.filter(r=>r.id.startsWith('interpretation-trash:')&&r.docId===docId&&r.status==='completed').map(r=>r.id.slice('interpretation-trash:'.length)));
+}
+export async function setInterpretationDeleted(id:string,docId:string,deleted:boolean):Promise<void>{
+ const row=await idbGet('tasks',id);
+ if(!row||row.docId!==docId||!(id.startsWith('interpretation:')||(id.startsWith('saved-result:')&&(row as {action?:string}).action==='explain')))throw new Error('这条解读不属于当前文献');
+ await idbPut('tasks',{id:'interpretation-trash:'+id,docId,status:deleted?'completed':'cancelled',snapshotHash:id,updatedAt:Date.now()});
+}

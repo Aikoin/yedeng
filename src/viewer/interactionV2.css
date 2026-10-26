@@ -468,3 +468,5 @@ h3.yd-markdown-heading { font-size:16px; }
 .yd-translation-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
 
 #request-workspace > .yd-translation-card { flex:0 1 auto; min-height:0; overflow:auto; }
+
+.yd-interpretation-quote { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
