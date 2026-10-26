@@ -457,3 +457,14 @@ h3.yd-markdown-heading { font-size:16px; }
 
 /* Explicit send moves the log once; streaming must not drag the reading position. */
 #chat-log { overflow-anchor:none; }
+
+/* Translation is a compact result, not a question composer. */
+.yd-translation-card { padding:18px 22px; font-size:13px; line-height:1.85; }
+.yd-translation-card header { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.yd-translation-original { margin:16px 0 12px; padding:8px 12px; border-left:2px solid var(--ml-border); color:var(--ml-muted); white-space:pre-wrap; max-height:150px; overflow:auto; overflow-wrap:anywhere; }
+.yd-translation-result { min-height:36px; font-size:14px; white-space:normal; overflow-wrap:anywhere; }
+.yd-translation-result p { margin:8px 0; }
+.yd-translation-card .yd-status { margin:8px 0; font-size:11px; }
+.yd-translation-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
+
+#request-workspace > .yd-translation-card { flex:0 1 auto; min-height:0; overflow:auto; }

@@ -3,6 +3,7 @@
  * 摘要忠于论文；阅读解释允许通用背景，但不得冒充本文证据或联网结果。
  */
 import type { ChatMessage } from './types';
+import { translationSystem, translationMessages } from './translation';
 import { READING_GUIDANCE } from './readingGuidance';
 
 export const PROMPT_VERSION = 'v2.1.0';
@@ -42,7 +43,7 @@ export function translateMessages(
   custom?: string
 ): ChatMessage[] {
   const system = withCustom(
-    `你是学术论文翻译助手。把用户给出的每个文本片段翻译成${targetLang}。\n` +
+    translationSystem(targetLang)+'\n批量模式：按以下 JSON 格式返回每一片段，不适用纯文本输出格式。\n' +
       '规则：\n' +
       '1) 保持术语准确，首次出现的专业术语用「中文（English）」形式；\n' +
       '2) 公式、变量、引用编号（如 [12]、Figure 3、Table 2、Eq. (5)）原样保留；\n' +
@@ -65,19 +66,7 @@ export function translateOneMessages(
   targetLang: string,
   custom?: string
 ): ChatMessage[] {
-  const system = withCustom(
-    `你是学术论文翻译助手。把用户给出的原文翻译成${targetLang}。\n` +
-      '规则：\n' +
-      '1) 直接输出译文，不要任何前言、解释、译注；\n' +
-      '2) 术语准确，公式、变量、引用编号（[12]、Figure 3、Eq. (5)）原样保留；\n' +
-      '3) 保持原文的分句与逻辑关系，可以比原文更通顺，但不得增删信息。',
-    custom
-  );
-  const user = `${contextBlock(ctx)}\n\n原文：\n"""\n${text}\n"""`;
-  return [
-    { role: 'system', content: system },
-    { role: 'user', content: user },
-  ];
+  return translationMessages(text,targetLang,ctx.paragraph||ctx.surroundings||'',custom);
 }
 
 export function explainMessages(text: string, ctx: PaperContext, custom?: string): ChatMessage[] {
