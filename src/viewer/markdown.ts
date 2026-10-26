@@ -1,6 +1,7 @@
 import { renderFormula } from '../formula/render';
 /** 极简 Markdown 渲染（安全：先构造 DOM，不用 innerHTML），并把 [p.3] 变成可点击引用。 */
 import { h } from '../shared/dom';
+import { parseMarkdownTable, type MarkdownTable } from './markdownTable';
 
 const CITATION = /\[p\.(\d+)(?:\s*§\s*([^\]]+))?\]|\[(E\d+)\]/g;
 const INLINE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\\\([\s\S]*?\\\))/g;
@@ -105,6 +106,23 @@ function safeHref(raw: string): string | null {
   return null;
 }
 
+function renderTable(value: MarkdownTable, options: RenderOptions): HTMLElement {
+  const table = h('table', { class: 'yd-markdown-table' });
+  const row = (cells: string[], header: boolean) => {
+    const tr = h('tr');
+    cells.forEach((text, i) => {
+      const cell = header ? h('th', { scope: 'col' }) : h('td');
+      cell.style.textAlign = value.alignments[i];
+      cell.appendChild(renderInline(text, options)); tr.appendChild(cell);
+    });
+    return tr;
+  };
+  table.appendChild(h('thead', {}, row(value.headers, true)));
+  const body = h('tbody'); for (const cells of value.rows) body.appendChild(row(cells, false));
+  table.appendChild(body);
+  return h('div', { class: 'yd-markdown-table-scroll', role: 'region', 'aria-label': '回答中的表格，可横向滚动', tabIndex: 0 }, table);
+}
+
 export function renderMarkdown(text: string, options: RenderOptions = {}): DocumentFragment {
   const frag = document.createDocumentFragment();
   const lines = text.split('\n');
@@ -125,7 +143,8 @@ export function renderMarkdown(text: string, options: RenderOptions = {}): Docum
   };
 
   let mathBlock:string[]|null=null;
-  for (const rawLine of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const rawLine = lines[lineIndex];
     const line = rawLine.replace(/\s+$/, '');
     if(!codeBlock){
       if(mathBlock){if(line.trim()==='\\]'||line.trim()==='$$'){frag.appendChild(mathNode(mathBlock.join('\n'),true));mathBlock=null;}else mathBlock.push(rawLine);continue;}
@@ -170,6 +189,11 @@ export function renderMarkdown(text: string, options: RenderOptions = {}): Docum
       li.appendChild(renderInline(listItem[1], options));
       list.appendChild(li);
       continue;
+    }
+    const table = parseMarkdownTable(lines, lineIndex);
+    if (table) {
+      flushParagraph(); flushList(); frag.appendChild(renderTable(table, options));
+      lineIndex = table.end - 1; continue;
     }
     paragraph.push(line);
   }
