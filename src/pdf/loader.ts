@@ -1,3 +1,4 @@
+import {validatePdfBytes} from './validateBytes';
 import { pdfRenderScheduler } from './renderScheduler';
 /**
  * pdf.js 加载层：字节获取、文档打开、元信息/大纲解析。
@@ -84,6 +85,7 @@ export interface LoadHandlers {
 }
 
 export function loadDocument(bytes: ArrayBuffer, handlers: LoadHandlers = {}): PDFDocumentLoadingTask {
+  validatePdfBytes(bytes);
   ensureWorker();
   const task = getDocument({
     data: bytes,

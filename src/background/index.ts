@@ -1,3 +1,4 @@
+import {menuInstaller} from './contextMenus';
 /**
  * Service Worker：PDF 接管入口 + 接管决策自检日志。
  *
@@ -290,20 +291,8 @@ async function refreshBadge(): Promise<void> {
 
 /* ---------------- 右键菜单 ---------------- */
 
-function setupMenus(): void {
-  chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({
-      id: 'ml-open-link',
-      title: '用 页灯 YEDENG 打开这个链接',
-      contexts: ['link'],
-    });
-    chrome.contextMenus.create({
-      id: 'ml-open-page',
-      title: '用 页灯 YEDENG 打开当前页',
-      contexts: ['page', 'frame'],
-    });
-  });
-}
+const installMenus=menuInstaller(chrome.contextMenus,()=>chrome.runtime.lastError?.message);
+function setupMenus():void { void installMenus().catch(error=>log.warn('右键菜单初始化失败',error)); }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   const target = info.menuItemId === 'ml-open-link' ? info.linkUrl : info.pageUrl ?? tab?.url;
