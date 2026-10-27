@@ -39,6 +39,8 @@ if (existsSync(mfPath)) {
   const mf = JSON.parse(readFileSync(mfPath, 'utf8'));
   const checks = [
     [mf.manifest_version === 3, 'manifest_version = 3'],
+    [mf.version === JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')).version, 'manifest version matches package version'],
+    [mf.version_name === undefined || mf.version_name === mf.version, 'display version matches actual version'],
     [mf.background?.service_worker === 'background.js', 'service_worker = background.js'],
     [mf.options_page === 'options/index.html', 'options_page 正确'],
     [mf.action?.default_popup === 'popup/index.html', 'default_popup 正确'],
