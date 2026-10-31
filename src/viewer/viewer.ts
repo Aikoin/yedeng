@@ -1,3 +1,4 @@
+import {durableReaderUrl} from './readerNavigation';
 import {initAssistantNavigation,resetAssistantNavigation} from './assistantNavigation';
 import {initNotebook,refreshNotebook} from './notebook';
 import './readerExperience.css';
@@ -14,7 +15,7 @@ import { documentFingerprint } from '../shared/hash';
 import { sendMessage } from '../shared/messaging';
 import { loadSettings, type Settings } from '../shared/settings';
 import { toast, toastError } from '../shared/toast';
-import { initAiPanels, onTextExtracted, renderModelSelect, resetAiPanels } from './aiActions';
+import { initAiPanels, restoreDocumentChat, onTextExtracted, renderModelSelect, resetAiPanels } from './aiActions';
 import { initInlineAnnotationActions, closeInlineAnnotationMenu, loadAnnotations, renderPageAnnotations, reanchorAnnotations, exportAnnotations } from './annotations';
 import { initSelectionTools, clearSelectionSnapshot, highlightFromShortcut, underlineFromShortcut, noteFromShortcut, quickAction } from './selection';
 import { jumpToPage, state } from './state';
@@ -479,6 +480,8 @@ async function openBytes(bytes: ArrayBuffer, url: string, fileName: string | und
   if(automaticCopy)await savePdfLocally(fingerprint,automaticCopy).catch(()=>toast('PDF 本地留存失败，请保留原文件','error'));
   await updateRetentionStatus(doc,fingerprint);
   if (generation !== openGeneration) return;
+  history.replaceState(null,'',durableReaderUrl(location.href,fingerprint));
+  restoreDocumentChat();
   await loadAnnotations();
   if (generation !== openGeneration) return;
   await loadEvidenceWorkspace();

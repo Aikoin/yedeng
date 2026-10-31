@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks=vi.hoisted(()=>({
-  get:vi.fn(), send:vi.fn(), prepare:vi.fn(), access:vi.fn(), toast:vi.fn(), persist:vi.fn(),
+  get:vi.fn(), send:vi.fn(), prepare:vi.fn(), access:vi.fn(), toast:vi.fn(), persist:vi.fn(), persistQuestion:vi.fn(),
   state:{docId:'doc',viewer:{},docText:{pages:[],sections:[]},info:{title:'Paper',numPages:2},index:null,settings:{providers:[],routing:{},prompts:{},cache:{enabled:true},reading:{}}} as any,
 }));
 vi.mock('../src/ai/dispatcher',()=>({productionDispatcher:()=>({prepare:mocks.prepare,send:mocks.send,subscribe:vi.fn(),invalidate:vi.fn()}),ensureReaderAiAccess:mocks.access,setDocumentAiPolicy:vi.fn()}));
@@ -11,7 +11,7 @@ vi.mock('../src/ai/preparedRequest',()=>({authorizeExplicitSend:()=>({}),support
 vi.mock('../src/shared/idb',()=>({idbGet:mocks.get,idbPut:vi.fn()}));
 vi.mock('../src/shared/settings',()=>({isConfigured:()=>true,loadSettings:vi.fn(),saveSettings:vi.fn()}));
 vi.mock('../src/shared/toast',()=>({toast:mocks.toast}));
-vi.mock('../src/shared/documentChat',()=>({persistDocumentChatTurn:mocks.persist}));
+vi.mock('../src/shared/documentChat',()=>({persistDocumentChatTurn:mocks.persist,persistDocumentChatQuestion:mocks.persistQuestion}));
 vi.mock('../src/shared/hash',()=>({sha256Hex:async()=> 'hash'}));
 vi.mock('../src/viewer/markdown',()=>({renderMarkdown:(text:string)=>document.createTextNode(text)}));
 vi.mock('../src/viewer/state',()=>({state:mocks.state,jumpToPage:vi.fn(),rebuildIndex:vi.fn()}));
@@ -38,6 +38,7 @@ class Element {
 const flat=(node:Element):Element[]=>[node,...node.children.flatMap(flat)];
 let elements:Record<string,Element>;
 let extracted:typeof import('../src/viewer/aiActions').onTextExtracted;
+let ready:typeof import('../src/viewer/aiActions').restoreDocumentChat;
 let init:typeof import('../src/viewer/aiActions').initAiPanels;
 let reset:typeof import('../src/viewer/aiActions').resetAiPanels;
 const input=()=>elements['chat-input'];
@@ -46,16 +47,17 @@ async function settle(){await vi.waitFor(()=>expect(button().disabled).toBe(fals
 function enter(text:string){input().value=text;input().onkeydown({key:'Enter',shiftKey:false,isComposing:false,preventDefault:vi.fn()});}
 function click(text:string){input().value=text;button().onclick();}
 beforeEach(async()=>{
-  vi.resetModules();vi.clearAllMocks();
+  vi.resetModules();vi.resetAllMocks();
   elements=Object.fromEntries(['btn-setup-ai','btn-summary-regen','btn-sections-all','btn-sections-stop','btn-chat-send','btn-chat-stop','btn-chat-clear','chat-input','model-select','summary-body','keywords-body','section-list','chat-log'].map(id=>[id,new Element('div')]));
   const query=(selector:string)=>{if(selector.includes(' ')){const [root,child]=selector.split(' ');return elements[root.slice(1)]?.querySelector(child)||null;}return selector[0]==='#'?elements[selector.slice(1)]||null:null;};
   vi.stubGlobal('document',{querySelector:query,querySelectorAll:()=>[],getElementById:(id:string)=>elements[id],createElement:(tag:string)=>new Element(tag),createTextNode:(text:string)=>{const node=new Element('#text');node.textContent=text;return node;}});
   vi.stubGlobal('chrome',{runtime:{onMessage:{addListener:vi.fn()}},storage:{onChanged:{addListener:vi.fn()}}});vi.stubGlobal('BroadcastChannel',undefined);
   mocks.state.settings.cache.enabled=true;mocks.state.docId='doc';mocks.state.viewer={};
   mocks.get.mockResolvedValue(undefined);mocks.state.settings.reading={autoOverview:false};mocks.access.mockResolvedValue(true);mocks.prepare.mockResolvedValue({request:{id:'request',endpoint:'',model:''}});
+  mocks.persistQuestion.mockResolvedValue([]);
   mocks.send.mockResolvedValue({text:'Answer'});
   let history:any[]=[];mocks.persist.mockImplementation(async(_id,turn)=>{history.push({role:'user',content:turn.question},{role:'assistant',content:turn.answer,sources:[]});return history;});
-  const module=await import('../src/viewer/aiActions');init=module.initAiPanels;reset=module.resetAiPanels;extracted=module.onTextExtracted;init();
+  const module=await import('../src/viewer/aiActions');ready=module.restoreDocumentChat;init=module.initAiPanels;reset=module.resetAiPanels;extracted=module.onTextExtracted;init();
 });
 afterEach(()=>vi.unstubAllGlobals());
 describe('paper chat repeated send lifecycle',()=>{
@@ -144,4 +146,22 @@ describe('paper chat repeated send lifecycle',()=>{
     const prevent=vi.fn();input().onkeydown({key:'Enter',shiftKey:true,isComposing:false,preventDefault:prevent});input().onkeydown({key:'Enter',shiftKey:false,isComposing:true,preventDefault:prevent});expect(prevent).not.toHaveBeenCalled();expect(mocks.send).not.toHaveBeenCalled();
     mocks.access.mockImplementationOnce(()=>new Promise(()=>{}));click('first');expect(button().disabled).toBe(true);reset();expect(button().disabled).toBe(false);expect(button().hidden).toBe(false);
   });
+});
+
+it('commits the question before network dispatch and restores it if the page leaves mid-answer',async()=>{
+ let commit!:()=>void;mocks.persistQuestion.mockImplementationOnce(()=>new Promise<void>(r=>{commit=r;}));
+ click('question before navigation');await vi.waitFor(()=>expect(mocks.persistQuestion).toHaveBeenCalledOnce());expect(mocks.send).not.toHaveBeenCalled();
+ const question=mocks.persistQuestion.mock.calls[0][1];
+ mocks.send.mockImplementationOnce(()=>new Promise(()=>{}));commit();await vi.waitFor(()=>expect(mocks.send).toHaveBeenCalledOnce());
+ reset();init();mocks.get.mockResolvedValue({messages:[{role:'user',content:question.question,at:question.at,turnId:question.id}]});ready();
+ await vi.waitFor(()=>expect(elements['chat-log'].textContent).toContain('question before navigation'));expect(elements['chat-log'].textContent).toContain('问题已保留');expect(mocks.send).toHaveBeenCalledOnce();
+});
+it('restores completed answers without waiting for text extraction or requesting a model',async()=>{
+ mocks.state.docText=null;
+ mocks.get.mockResolvedValue({messages:[{role:'user',content:'saved question',turnId:'t'},{role:'assistant',content:'saved answer',turnId:'t'}]});ready();
+ await vi.waitFor(()=>expect(elements['chat-log'].textContent).toContain('saved answer'));expect(mocks.send).not.toHaveBeenCalled();
+ mocks.state.docText={pages:[],sections:[]};
+});
+it('does not incur a model request when the initial question cannot be saved',async()=>{
+ mocks.persistQuestion.mockRejectedValueOnce(new Error('quota'));click('keep this question');await settle();expect(mocks.send).not.toHaveBeenCalled();expect(elements['chat-log'].textContent).toContain('尚未调用模型');expect(elements['chat-log'].textContent).toContain('keep this question');
 });

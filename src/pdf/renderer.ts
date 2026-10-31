@@ -1,3 +1,4 @@
+import {setExternalPaperLink} from '../viewer/readerNavigation';
 /**
  * 阅读器渲染层：逐页懒渲染 canvas + pdf.js 官方文本层（可划词）。
  * 关键：pdf.js 的 TextLayer 用 --total-scale-factor 做 CSS 缩放，
@@ -354,11 +355,8 @@ export class PdfViewer {
       rotation: 0,
       isInPresentationMode: false,
       externalLinkEnabled: true,
-      addLinkAttributes(link: HTMLAnchorElement, url: string, newWindow = false) {
-        try{const target=new URL(url);if(!['https:','http:'].includes(target.protocol)||target.username||target.password)return;}catch{return;}
-        link.href = url;
-        link.rel = 'noopener noreferrer';
-        if (newWindow) link.target = '_blank';
+      addLinkAttributes(link: HTMLAnchorElement, url: string, _newWindow = false) {
+        setExternalPaperLink(link,url);
       },
       getDestinationHash() {
         return '#';

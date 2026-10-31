@@ -6,7 +6,7 @@ import { h, qs } from '../shared/dom';
 import { idbGet, idbPut, type ChatRecord } from '../shared/idb';
 import { isConfigured, loadSettings, saveSettings, type FeatureKey } from '../shared/settings';
 import { toast } from '../shared/toast';
-import { persistDocumentChatTurn } from '../shared/documentChat';
+import { persistDocumentChatTurn, persistDocumentChatQuestion } from '../shared/documentChat';
 import type { Section } from '../pdf/extract';
 import { sha256Hex } from '../shared/hash';
 import { createStreamingAnswer, streamingPreview } from './streamingAnswer';
@@ -22,14 +22,15 @@ const dispatcher = productionDispatcher(() => ({ docId: state.docId, sessionGene
 interface StoredAnswer extends ChatRecord { sources?: DocumentSource[]; sourceRevision?: string }
 let epoch = 0, registered = false, restoreGeneration = 0;
 let chatRestored:Promise<void>=Promise.resolve();
+let restoredFor:{docId:string;viewer:object|null}|null=null;
 let job: { action: DocumentAction; docId: string; viewer: object; epoch: number; controller: AbortController; output?: HTMLElement } | null = null;
-let history: { role: 'user' | 'assistant'; content: string; at: number; sources?: DocumentSource[]; coverage?: string }[] = [];
+let history: { role: 'user' | 'assistant'; content: string; at: number; turnId?:string; sources?: DocumentSource[]; coverage?: string }[] = [];
 const featureFor = (action: DocumentAction): FeatureKey => action === 'overview' ? 'summary' : action === 'sectionBatch' ? 'sectionSummary' : action;
 const keyFor = (action: DocumentAction, index?: number) => `${state.docId}:g4-${action === 'sectionSummary' ? `section:${index}` : action}`;
 
 export function resetAiPanels(): void {
   document.querySelector('.yd-source-peek')?.remove();
-  restoreGeneration++;chatRestored=Promise.resolve();epoch++; job?.controller.abort(); job = null; history = []; dispatcher.invalidate('已切换论文');
+  restoredFor=null;restoreGeneration++;chatRestored=Promise.resolve();epoch++; job?.controller.abort(); job = null; history = []; dispatcher.invalidate('已切换论文');
   setChatBusy(false);
   for (const id of ['summary-body','keywords-body','section-list','chat-log']) document.getElementById(id)?.replaceChildren();
 }
@@ -109,7 +110,7 @@ async function restore(key:string,output:HTMLElement|null,docId:string,viewer:ob
 }
 export function onTextExtracted():void {
   rebuildIndex();renderModelSelect();const docId=state.docId,viewer=state.viewer,version=++epoch;
-  restoreChatHistory(docId,viewer);
+  restoreDocumentChat();
   qs('#summary-body').textContent=isConfigured(state.settings)?'正在整理这篇论文…':'连接 AI 服务后，自动生成摘要与关键词。';
   qs('#keywords-body').textContent='';const host=qs('#section-list');host.replaceChildren();
   const sections=state.docText?.sections.filter(s=>s.text.trim().length>120)??[];
@@ -133,6 +134,12 @@ export function onTextExtracted():void {
     if(state.docId!==docId||state.viewer!==viewer||epoch!==version)return;
   })().catch(error=>{if(state.docId===docId)qs('#summary-body').textContent=String(error);});
 }
+/** Restore as soon as the document identity is available, independently of extraction. */
+export function restoreDocumentChat():void{
+ const {docId,viewer}=state;if(!docId||!viewer)return;
+ if(restoredFor?.docId===docId&&restoredFor.viewer===viewer)return;
+ restoredFor={docId,viewer};restoreChatHistory(docId,viewer);
+}
 function restoreChatHistory(docId:string,viewer:object|null):void {
   const generation=++restoreGeneration;
   chatRestored=(async()=>{
@@ -150,7 +157,12 @@ function renderChat(scrollToLatest=true):void {
   if(!history.length){const empty=h('div',{class:'yd-chat-empty'},h('span',{class:'yd-chat-orbit'},'✧'),h('h3',{},'从一个问题开始'),h('p',{},'结合这篇论文，聊聊你想弄懂的地方。'));
     for(const text of ['这篇论文最重要的发现是什么？','方法有哪些局限？']){const b=h('button',{class:'yd-suggestion'},text);b.onclick=()=>{qs<HTMLTextAreaElement>('#chat-input').value=text;qs('#chat-input').focus();};empty.append(b);}log.append(empty);
   }
-  for(const message of history){const bubble=h('article',{class:`ml-bubble ml-bubble--${message.role==='user'?'user':'ai'}`});if(message.role==='user')bubble.textContent=message.content;else showAnswer(bubble,message.content,message.sources??[],message.coverage);log.append(bubble);}
+  for(const message of history){const bubble=h('article',{class:`ml-bubble ml-bubble--${message.role==='user'?'user':'ai'}`});if(message.role==='user')bubble.textContent=message.content;else showAnswer(bubble,message.content,message.sources??[],message.coverage);log.append(bubble);
+    if(message.role==='user'&&message.turnId&&!history.some(m=>m.role==='assistant'&&m.turnId===message.turnId)){
+      const note=h('p',{class:'ml-muted'},'上次未保存完整回答，问题已保留。');
+      const retry=h('button',{class:'ghost'},'重新提问');retry.onclick=()=>{qs<HTMLTextAreaElement>('#chat-input').value=message.content;qs('#chat-input').focus();};note.append(retry);log.append(note);
+    }
+  }
   log.scrollTop=scrollToLatest?log.scrollHeight:previousScroll;
 }
 function setChatBusy(value:boolean):void {
@@ -158,7 +170,7 @@ function setChatBusy(value:boolean):void {
   if(send){send.disabled=value;send.hidden=value;}
   document.querySelector('#btn-chat-stop')?.classList.toggle('ml-hidden',!value);
 }
-async function run(action:DocumentAction,section?:Section,index?:number,force=false,retryTarget?:{question:string;reply:HTMLElement;docId:string;viewer:object;maxTokens?:number}):Promise<void>{
+async function run(action:DocumentAction,section?:Section,index?:number,force=false,retryTarget?:{question:string;reply:HTMLElement;docId:string;viewer:object;maxTokens?:number;turnId?:string}):Promise<void>{
   if(retryTarget&&(state.docId!==retryTarget.docId||state.viewer!==retryTarget.viewer)){toast('请回到原论文再重试','info');return;}
   if(job&&action==='chat'&&job.action!=='chat'){epoch++;job.controller.abort();if(job.output)job.output.textContent='概览已暂停，可稍后重新生成。';job=null;}
   if(job){toast('正在处理当前任务，可以先取消','info');return;}
@@ -166,6 +178,8 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
   if(!isConfigured(state.settings)){void chrome.tabs.create({url:chrome.runtime.getURL('welcome/index.html')+'?returnTo='+encodeURIComponent(location.href)});return;}
   const question=action==='chat'?(retryTarget?.question??qs<HTMLTextAreaElement>('#chat-input').value.trim()):'';if(action==='chat'&&!question)return;
   const owned={action,docId,viewer,epoch,controller:new AbortController(),output:undefined as HTMLElement|undefined};job=owned;const current=()=>job===owned&&state.docId===docId&&state.viewer===viewer&&epoch===owned.epoch;
+  const turnId=retryTarget?.turnId??crypto.randomUUID();
+  const questionAt=Date.now();
   let reply:HTMLElement|undefined;
   let progress:HTMLElement|undefined;
   let context:DocumentContext|undefined;
@@ -189,6 +203,12 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     owned.output=reply;
     progress=h('div',{class:'yd-inline-progress'},h('span',{class:'ml-spinner'}),h('span',{},'生成中'),h('button',{class:'ghost'},'取消'));
     progress.querySelector('button')!.onclick=()=>owned.controller.abort();if(action!=='chat')output.before(progress);
+    if(action==='chat'){
+      await chatRestored;if(!current())return;
+      try{await persistDocumentChatQuestion(docId,{id:turnId,question,at:questionAt});}
+      catch{throw new Error('问题未能保存到本机，本次尚未调用模型。请重试发送。');}
+      if(!current())return;
+    }
     if(!await ensureReaderAiAccess(docId))throw new Error('本篇已关闭 AI，请在阅读设置中开启');if(!current())return;
     if(action==='chat'){await chatRestored;if(!current())return;}
     const hits=action==='chat'&&state.index?retrievePaperChat(state.index,question,history):[];
@@ -208,7 +228,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     if(action==='chat'){
       const at=Date.now();history.push({role:'user',content:question,at},{role:'assistant',content:result.text,at,sources:context.sources,coverage:context.coverage});
       // Conversation history is user data, independent of reusable model-result caching.
-      const turn={id:prepared.request.id,question,answer:result.text,at,sources:context.sources,coverage:context.coverage};
+      const turn={id:turnId,question,answer:result.text,at:questionAt,sources:context.sources,coverage:context.coverage};
       const notice=h('small',{class:'ml-muted'},'正在保存对话…');reply.append(notice);
       const save=async()=>{
         try{const merged=await persistDocumentChatTurn(docId,turn);
@@ -237,7 +257,7 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
         const settings=h('button',{class:'ghost'},'调整输出额度');settings.onclick=()=>void chrome.runtime.sendMessage({type:'open-options'});reply.append(settings);
       }
       const retry=h('button',{class:'ghost'},higher?`提高至 ${higher} tokens 重试`:'重试');
-      retry.onclick=()=>void run(action,section,index,true,action==='chat'?{question,reply:reply!,docId,viewer,...(higher?{maxTokens:higher}:retryTarget?.maxTokens?{maxTokens:retryTarget.maxTokens}:{})}:undefined);reply.append(retry);
+      retry.onclick=()=>void run(action,section,index,true,action==='chat'?{question,reply:reply!,docId,viewer,turnId,...(higher?{maxTokens:higher}:retryTarget?.maxTokens?{maxTokens:retryTarget.maxTokens}:{})}:undefined);reply.append(retry);
     }else toast(message,'error');
   }}finally{stream.stop();progress?.remove();if(job===owned){job=null;setChatBusy(false);}}
 }
