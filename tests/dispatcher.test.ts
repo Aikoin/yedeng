@@ -3,6 +3,7 @@ import { createRequestDispatcher, PROBE_FIXTURES, type DispatcherDependencies, t
 import type { sendPreparedTransport } from '../src/ai/openai';
 import { authorizeExplicitSend, type PreparedRequest } from '../src/ai/preparedRequest';
 import { DEFAULT_SETTINGS } from '../src/shared/settings';
+import { preparedBody } from '../src/ai/openai';
 import { prepareDocumentContext } from '../src/ai/documentContext';
 import type { DocText } from '../src/pdf/extract';
 function harness(overrides:Partial<DispatcherDependencies>={}) {
@@ -36,6 +37,14 @@ describe('production prepared dispatcher (synthetic transport, no real API)',()=
     const changed=prepareDocumentContext({action:'chat',title:'Synthetic paper',doc:{...doc,pages:doc.pages.map((p,i)=>i===2?{...p,text:'Changed source definition.'}:p)},totalPages:3,question:'啥是全双工模型'});
     const updated=await h.dispatcher.prepare({...scope,resultSources:changed.sources},changed.messages,{temperature:.2});
     expect(updated.cacheKey).not.toBe(prepared.cacheKey);
+  });
+  it('explicit zero removes legacy output defaults from the final HTTP payload',async()=>{
+    const h=harness();h.runtime.settings.providers[0].maxTokens=2048;
+    const draft=await h.dispatcher.prepare({...h.scope,feature:'chat',action:'document_chat'},[{role:'user',content:'Explain'}],{maxTokens:0});
+    expect(draft.request.parameters).not.toHaveProperty('maxTokens');
+    expect(preparedBody(draft.request)).not.toHaveProperty('max_tokens');
+    await h.dispatcher.send(draft,authorizeExplicitSend(draft.request));
+    expect(preparedBody(h.transport.mock.calls[0][0])).not.toHaveProperty('max_tokens');
   });
   it('freezes exact visible material and duplicate clicks create one attempt/send',async()=>{
     const h=harness(),draft=await h.prepare();

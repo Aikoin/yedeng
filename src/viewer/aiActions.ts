@@ -216,8 +216,8 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
     if(action==='chat')reply.textContent=context.coverage.startsWith('已提供全部')?'正在通读可提取的论文文字并组织回答…':'正在结合相关上下文与关键章节回答…';
     const revision=await sha256Hex(new TextEncoder().encode(JSON.stringify(context.messages)).buffer);
     const scope={type:'document_action' as const,action:`document_${action}`,feature:featureFor(action),docId,sessionGeneration:requestSessionGeneration(),sourceRevision:revision,resultSources:context.sources};
-    // Chat follows the provider's configured output budget and thinking defaults, instead of forcing 1600 tokens / thinking off.
-    const parameters={temperature:.2,...(action==='chat'?(retryTarget?.maxTokens?{maxTokens:retryTarget.maxTokens}:{}):{maxTokens:action==='overview'?1200:1600})};
+    // Chat omits the output cap (0 overrides legacy provider defaults); the service owns its limit.
+    const parameters={temperature:.2,...(action==='chat'?{maxTokens:retryTarget?.maxTokens??0}:{maxTokens:action==='overview'?1200:1600})};
     let prepared=await dispatcher.prepare(scope,context.messages,parameters);
     if(action!=='chat'&&supportsThinkingToggle(prepared.request.endpoint,prepared.request.model))prepared=await dispatcher.prepare(scope,context.messages,{...parameters,thinking:'disabled'});
     if(!current())return;
@@ -251,10 +251,10 @@ async function run(action:DocumentAction,section?:Section,index?:number,force=fa
       reply.append(h('p',{class:'yd-status'},message));
       if(partial.trim())reply.append(h('small',{class:'ml-muted'},'以上为未完成的回答，仅保留在当前页面，尚未存入完整对话。'));
       const limit=error instanceof AiOutputLimitError?error.maxTokens:undefined;
-      const higher=error instanceof AiOutputLimitError&&action==='chat'&&(!limit||limit<32768)?Math.min(32768,Math.max(8192,(limit??4096)*2)):undefined;
+      const higher=error instanceof AiOutputLimitError&&action==='chat'&&limit!==undefined&&limit<32768?Math.min(32768,Math.max(8192,limit*2)):undefined;
       if(error instanceof AiOutputLimitError){
-        reply.append(h('small',{class:'ml-muted'},limit?`本次输出上限：${limit} tokens。`:'服务未返回具体输出上限。'));
-        const settings=h('button',{class:'ghost'},'调整输出额度');settings.onclick=()=>void chrome.runtime.sendMessage({type:'open-options'});reply.append(settings);
+        reply.append(h('small',{class:'ml-muted'},limit?`本次输出上限：${limit} tokens。`:'页灯未设置输出额度；本次触及模型服务的输出或上下文上限。'));
+        if(limit){const settings=h('button',{class:'ghost'},'调整输出额度');settings.onclick=()=>void chrome.runtime.sendMessage({type:'open-options'});reply.append(settings);}
       }
       const retry=h('button',{class:'ghost'},higher?`提高至 ${higher} tokens 重试`:'重试');
       retry.onclick=()=>void run(action,section,index,true,action==='chat'?{question,reply:reply!,docId,viewer,turnId,...(higher?{maxTokens:higher}:retryTarget?.maxTokens?{maxTokens:retryTarget.maxTokens}:{})}:undefined);reply.append(retry);

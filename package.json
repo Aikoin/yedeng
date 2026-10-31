@@ -1,7 +1,7 @@
 {
   "name": "yedeng",
   "private": true,
-  "version": "0.2.14",
+  "version": "0.2.15",
   "description": "页灯 YEDENG — 使用自己的 AI 服务精读论文的 Chrome 扩展",
   "type": "module",
   "scripts": {

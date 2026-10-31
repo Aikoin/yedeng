@@ -85,6 +85,19 @@ describe('paper chat repeated send lifecycle',()=>{
   it('manual send authorizes interrupted-task recovery without forcing past completed caches',async()=>{
     click('question');await settle();expect(mocks.send.mock.calls[0][2]).toMatchObject({force:false,retryInterrupted:true});
   });
+  it('omits legacy provider output limits on every normal chat request',async()=>{
+    click('Explain in detail');await settle();
+    expect(mocks.prepare.mock.calls[0][2]).toMatchObject({maxTokens:0});
+  });
+  it('reports service-side truncation without introducing a smaller retry cap',async()=>{
+    const {AiOutputLimitError}=await import('../src/ai/types');
+    mocks.send.mockRejectedValueOnce(new AiOutputLimitError('Partial answer'));click('question');await settle();
+    expect(elements['chat-log'].textContent).toContain('页灯未设置输出额度');
+    expect(elements['chat-log'].textContent).not.toContain('提高至');
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+    flat(elements['chat-log']).find(n=>n.tagName==='button'&&n.textContent==='重试')!.onclick();await settle();
+    expect(mocks.prepare.mock.calls.at(-1)![2]).toMatchObject({maxTokens:0});
+  });
   it('retains incomplete answers and raises the budget only on a deliberate retry',async()=>{
     const {AiOutputLimitError}=await import('../src/ai/types');
     mocks.send.mockRejectedValueOnce(new AiOutputLimitError('Partial explanation',2048));click('original');await settle();
